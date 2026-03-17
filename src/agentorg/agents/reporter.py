@@ -16,25 +16,43 @@ class ReporterAgent(BaseAgent):
 
     def __init__(self) -> None:
         super().__init__()
-        self.model = config.REPORTER_MODEL
+        if not config.FAST_MODE:
+            self.model = config.REPORTER_MODEL
+        # Reporter always gets full token budget — it synthesizes everything and must never truncate
+        self.max_tokens = config.AGENT_MAX_TOKENS
+        self.clock = None  # disable time-budget token cap for reporter
 
     def _gather_recent_reports(self) -> str:
-        """Collect the latest planner, builder, and verifier reports from this run."""
+        """
+        Collect all builder reports + latest planner/verifier from this session.
+        Builder reports accumulate across cycles — we want ALL of them for synthesis.
+        """
         sections = []
-        for agent_role in ("planner", "builder", "verifier"):
+
+        # All builder reports (every cycle adds a new section — include them all)
+        builder_files = sorted(
+            config.REPORTS_DIR.glob("*_builder_*.md"),
+            key=lambda f: f.stat().st_mtime,
+        )
+        for f in builder_files:
+            content = f.read_text(encoding="utf-8")
+            if "_Dry-run mode_" in content or "Dry-run mode" in content:
+                continue
+            sections.append(f"## Builder Report — {f.stem}\n\n{content}")
+
+        # Latest planner and verifier only (for context on project status and QA verdict)
+        for agent_role in ("planner", "verifier"):
             files = sorted(
                 config.REPORTS_DIR.glob(f"*_{agent_role}_*.md"),
                 key=lambda f: f.stat().st_mtime,
                 reverse=True,
             )
             if files:
-                latest = files[0]
-                content = latest.read_text(encoding="utf-8")
-                # Skip dry-run placeholder reports
+                content = files[0].read_text(encoding="utf-8")
                 if "_Dry-run mode_" in content or "Dry-run mode" in content:
-                    logger.warning(f"[reporter] Skipping dry-run report: {latest.name}")
                     continue
-                sections.append(f"## {agent_role.capitalize()} Report\n\n{content}")
+                sections.append(f"## {agent_role.capitalize()} Report (latest)\n\n{content}")
+
         return "\n\n---\n\n".join(sections) if sections else "No live reports found this cycle."
 
     def _write_slack_brief(self, summary: str) -> str:
