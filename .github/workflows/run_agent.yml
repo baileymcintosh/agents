@@ -35,8 +35,8 @@ env:
   FAST_MODE: ${{ github.event.inputs.fast_mode }}
   TIME_BUDGET: ${{ github.event.inputs.time_budget || '' }}
   GITHUB_REPOSITORY: ${{ github.repository }}
-  REPORTER_MODEL: "gpt-4.5-preview"
-  QUAL_BUILDER_MODEL: "gpt-4.5-preview"
+  REPORTER_MODEL: "gpt-5.4"
+  QUAL_BUILDER_MODEL: "gpt-5.4"
 
 jobs:
   run-agent:

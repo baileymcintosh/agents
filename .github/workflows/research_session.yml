@@ -40,9 +40,9 @@ env:
   GITHUB_REPOSITORY: ${{ github.repository }}
   PLANNER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
   QUANT_BUILDER_MODEL: "claude-sonnet-4-6"
-  QUAL_BUILDER_MODEL: "gpt-4.5-preview"
+  QUAL_BUILDER_MODEL: "gpt-5.4"
   VERIFIER_MODEL: "claude-sonnet-4-6"
-  REPORTER_MODEL: "gpt-4.5-preview"
+  REPORTER_MODEL: "gpt-5.4"
 
 jobs:
   session:

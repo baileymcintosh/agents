@@ -45,7 +45,7 @@ class BaseAgent(ABC):
         self.clock: RunClock | None = RunClock.load()
 
     def _is_openai_model(self) -> bool:
-        return self.model.startswith(("gpt-", "o1-", "o3-", "o4-", "codex"))
+        return self.model.startswith(("gpt-", "o1", "o3", "o4", "codex"))
 
     def _call_openai(self, user_message: str) -> str:
         """Simple OpenAI chat completion — used when self.model is a GPT/o-series model."""
