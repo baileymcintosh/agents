@@ -10,16 +10,19 @@
 
 ## The Brief
 
-Produce a comprehensive, Bridgewater-quality research report on the Iran conflict situation and its implications for global financial markets. The standard is equivalent to what a team of senior researchers would produce after two weeks of intensive work including expert interviews, historical research, and scenario modeling.
+Produce a comprehensive, Bridgewater-quality research report on the **Iran-USA-Israel military conflict of February–March 2026**, which is currently ongoing as of the date of this research. The standard is equivalent to what a team of senior researchers would produce after two weeks of intensive work including expert interviews, historical research, and scenario modeling.
 
-This is not a summary. This is deep, rigorous, original analysis.
+**CRITICAL INSTRUCTION FOR ALL AGENTS:** This research is about the active military conflict between Iran and the USA/Israel that began in early 2026. When searching the web, use queries focused on 2026 — e.g. "Iran Israel US war 2026", "Iran conflict March 2026", "Iran military strike 2026". Do NOT focus on older conflicts. Prioritize the most recent information available.
+
+This is not a summary. This is deep, rigorous, original analysis of an ongoing, evolving situation.
 
 ---
 
 ## Research Scope
 
-### 1. Geopolitical & Military Situation
-- Current state of the conflict: who is involved, what are the active fronts, what has happened
+### 1. Geopolitical & Military Situation (February–March 2026, ONGOING)
+- Current state of the conflict as of today: what military actions have occurred, who has struck what, what is the current operational status
+- Search queries to use: "Iran US Israel war 2026", "Iran military strikes March 2026", "Iran nuclear sites attacked 2026", "Middle East war 2026 latest"
 - Iran's strategic position: military capabilities, proxy network (Hezbollah, Houthis, PMF, etc.), nuclear program status
 - Key adversaries and their objectives: Israel, US, Gulf states, others
 - Regional dynamics: Saudi Arabia, UAE, Qatar, Iraq, Syria, Turkey — their positions and interests
