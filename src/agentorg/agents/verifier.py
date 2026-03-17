@@ -32,17 +32,15 @@ class VerifierAgent(BaseAgent):
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("[verifier] Starting verification cycle.")
-        self.post_slack_progress("🔎", "starting", "Reviewing research output for quality and accuracy...")
+        self.post_slack_progress("🔎", "starting", "Reviewing research output for accuracy, depth, and quality...")
 
         build_output = self._load_latest_build()
 
         prompt = (
             "You are the verifier agent. Critically review the research output below. "
-            "Check for: unsupported claims, logical errors, missing evidence, shallow analysis, "
-            "and anything that would undermine confidence in the findings. "
             "Issue a verdict (PASS / NEEDS REVISION / FAIL), a confidence score (0–100), "
-            "and specific actionable findings.\n\n"
-            f"## Research Output to Review\n\n{build_output}"
+            "and specific numbered findings on what is strong and what needs work.\n\n"
+            f"## Research Output\n\n{build_output}"
         )
 
         if dry_run:
@@ -52,13 +50,11 @@ class VerifierAgent(BaseAgent):
 
         report_path = self.write_report("Verification Report", report_content)
 
-        # Extract verdict for Slack
-        verdict = "Review complete."
-        for line in report_content.split("\n"):
-            if any(word in line for word in ["PASS", "FAIL", "NEEDS REVISION", "confidence", "Confidence"]):
-                verdict = line.strip().lstrip("#").strip()[:200]
-                break
-        self.post_slack_progress("✅", "done", verdict)
+        if not dry_run:
+            brief = self.generate_slack_brief(report_content)
+        else:
+            brief = "Dry-run complete."
+        self.post_slack_progress("✅", "done", brief)
 
         return {"status": "ok", "report": str(report_path)}
 

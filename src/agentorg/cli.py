@@ -32,7 +32,14 @@ def run(
         console.print("[yellow]Dry-run mode — no changes will be made.[/yellow]")
 
     module = importlib.import_module(f"agentorg.agents.{role}")
-    module.main(dry_run=dry_run)  # type: ignore[attr-defined]
+    if role == "debugger":
+        # Debugger runs its own main() (post-failure mode)
+        module.main(dry_run=dry_run)  # type: ignore[attr-defined]
+    else:
+        # All other agents use run_with_recovery for inline debugger support
+        agent_class = getattr(module, f"{role.capitalize()}Agent")
+        agent = agent_class()
+        agent.run_with_recovery(dry_run=dry_run)
 
 
 @app.command()

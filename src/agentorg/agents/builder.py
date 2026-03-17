@@ -32,7 +32,7 @@ class BuilderAgent(BaseAgent):
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("[builder] Starting build cycle.")
-        self.post_slack_progress("⚙️", "starting", "Reading the research plan and beginning deep analysis...")
+        self.post_slack_progress("⚙️", "starting", "Reading research plan and beginning deep analysis with web search...")
 
         plan = self._load_latest_plan()
 
@@ -42,10 +42,9 @@ class BuilderAgent(BaseAgent):
             project_brief = project_path.read_text(encoding="utf-8")
 
         prompt = (
-            "You are the builder agent. Below is the research plan for this cycle and the project brief. "
-            "Execute the assigned research section with maximum depth and rigor. "
-            "Search the web extensively for current information — use multiple targeted queries. "
-            "Produce a detailed, specific research section with evidence, citations, and analysis.\n\n"
+            "You are the builder agent. Execute the assigned research section with maximum depth. "
+            "Use web search extensively — run multiple targeted queries to find the most current information. "
+            "Produce specific, evidence-backed analysis with named sources, dates, and figures.\n\n"
             f"## Project Brief\n\n{project_brief}\n\n"
             f"## Research Plan\n\n{plan}"
         )
@@ -57,11 +56,11 @@ class BuilderAgent(BaseAgent):
 
         report_path = self.write_report("Research Section", report_content)
 
-        first_line = next(
-            (line.strip() for line in report_content.split("\n") if line.strip() and not line.startswith("#")),
-            "Research section complete."
-        )[:200]
-        self.post_slack_progress("✅", "done", f"Section complete. {first_line}")
+        if not dry_run:
+            brief = self.generate_slack_brief(report_content)
+        else:
+            brief = "Dry-run complete."
+        self.post_slack_progress("✅", "done", brief)
 
         return {"status": "ok", "report": str(report_path)}
 

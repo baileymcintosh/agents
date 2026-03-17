@@ -19,7 +19,7 @@ class PlannerAgent(BaseAgent):
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("[planner] Starting planning cycle.")
-        self.post_slack_progress("🔍", "starting", "Reading PROJECT.md and scanning the research landscape...")
+        self.post_slack_progress("🔍", "starting", "Reading the project brief and scanning for current intelligence...")
 
         project_brief = ""
         project_path = config.ROOT_DIR / "PROJECT.md"
@@ -28,26 +28,24 @@ class PlannerAgent(BaseAgent):
 
         prompt = (
             "Read the active project brief below carefully. "
-            "Survey what research has already been completed by reading any prior reports mentioned. "
-            "Then produce a detailed research plan for this cycle: identify the highest-priority section "
-            "to work on, write a precise brief for the Builder, and track overall project progress.\n\n"
+            "Survey what research has already been completed by checking prior reports. "
+            "Produce a detailed research plan for this cycle: identify the highest-priority section "
+            "to work on next, write a precise brief for the Builder, and track overall project progress.\n\n"
             f"{project_brief}"
         )
 
         if dry_run:
-            logger.info("[planner] Dry-run: skipping Claude call.")
             report_content = "_Dry-run mode — no Claude call made._"
         else:
             report_content = self.call_claude(prompt)
 
         report_path = self.write_report("Research Plan", report_content)
 
-        # Extract a one-line summary for the Slack update
-        first_line = next(
-            (line.strip() for line in report_content.split("\n") if line.strip() and not line.startswith("#")),
-            "Plan complete."
-        )[:200]
-        self.post_slack_progress("✅", "done", f"Research plan ready. {first_line}")
+        if not dry_run:
+            brief = self.generate_slack_brief(report_content)
+        else:
+            brief = "Dry-run complete."
+        self.post_slack_progress("✅", "done", brief)
 
         return {"status": "ok", "report": str(report_path)}
 

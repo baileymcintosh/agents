@@ -152,6 +152,81 @@ class BaseAgent(ABC):
         logger.info(f"[{self.role}] Report → {report_path.name}")
         return report_path
 
+    def generate_slack_brief(self, full_report: str) -> str:
+        """Ask Claude to write a genuinely informative 2-sentence Slack update."""
+        prompt = (
+            f"The {self.role} agent just finished work. "
+            "Write exactly 2 sentences for a Slack update to a senior executive. "
+            "Sentence 1: What specifically was found or accomplished — name actual facts, topics, findings. "
+            "Sentence 2: The single most important or surprising insight. "
+            "Be specific. No filler. No process commentary.\n\n"
+            f"Report:\n{full_report[:3000]}"
+        )
+        try:
+            response = self.client.messages.create(
+                model=config.REPORTER_MODEL,
+                max_tokens=150,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return str(response.content[0].text).strip()  # type: ignore[union-attr]
+        except Exception:
+            return "Work completed — see full report for details."
+
+    def run_with_recovery(self, dry_run: bool = False) -> dict[str, Any]:
+        """
+        Run the agent with inline debugger recovery.
+        On failure, hands off to Debugger to attempt a fix and retry.
+        Up to 3 attempts before escalating to Slack.
+        """
+        prompt_override: str | None = None
+        last_error: Exception | None = None
+
+        for attempt in range(1, 4):
+            try:
+                if prompt_override:
+                    result = self._run_with_prompt_override(prompt_override, dry_run)
+                else:
+                    result = self.run(dry_run=dry_run)
+                return result
+            except Exception as e:
+                last_error = e
+                logger.warning(f"[{self.role}] Attempt {attempt} failed: {e}")
+
+                if dry_run:
+                    raise
+
+                from agentorg.agents.debugger import DebuggerAgent
+                debugger = DebuggerAgent()
+                decision = debugger.consult(
+                    agent_role=self.role,
+                    error=e,
+                    original_prompt=prompt_override or "",
+                    attempt=attempt,
+                )
+
+                if decision["action"] == "retry":
+                    prompt_override = decision.get("modified_prompt", "")
+                    continue
+
+                # Escalate
+                self.write_report(
+                    "Agent Failure",
+                    f"## {self.role.capitalize()} failed after {attempt} attempts\n\n"
+                    f"**Error:** {type(last_error).__name__}: {last_error}\n\n"
+                    f"**Debugger:** {decision.get('message', '')}"
+                )
+                raise RuntimeError(decision.get("message", str(last_error)))
+
+        raise RuntimeError(f"{self.role} failed after 3 attempts: {last_error}")
+
+    def _run_with_prompt_override(self, modified_prompt: str, dry_run: bool) -> dict[str, Any]:
+        """Run using a debugger-provided modified prompt."""
+        if dry_run:
+            return {"status": "dry_run"}
+        content = self.call_claude(modified_prompt)
+        report_path = self.write_report("Recovery Attempt", content)
+        return {"status": "ok", "report": str(report_path)}
+
     def post_slack_progress(self, emoji: str, status: str, detail: str = "") -> None:
         """Post a progress update to Slack if configured. Never crashes."""
         if not config.SLACK_BOT_TOKEN or not config.SLACK_EXECUTIVE_CHANNEL_ID:

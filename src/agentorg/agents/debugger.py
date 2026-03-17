@@ -1,14 +1,19 @@
 """
-Debugger agent — activates only when another agent fails.
+Debugger agent — two modes:
 
-Reads GitHub Actions failure logs, diagnoses the root cause via Claude,
-posts a plain-English explanation to Slack, and attempts simple fixes.
+1. INLINE (primary): Called by a struggling agent mid-run.
+   Analyzes the error, suggests a fix, and lets the agent retry.
+   The pipeline never stops.
+
+2. POST-FAILURE (fallback): Triggered by GitHub Actions when a job crashes
+   completely. Diagnoses and posts to Slack.
 """
 
 from __future__ import annotations
 
 import os
 import subprocess
+import traceback
 from typing import Any
 
 from loguru import logger
@@ -17,148 +22,169 @@ from agentorg.agents.base import BaseAgent
 from agentorg import config
 
 
-# Errors the debugger can resolve automatically without human input
-AUTO_FIXABLE = {
-    "RateLimitError": (
-        "rate_limit",
-        "Hit Anthropic API rate limit. This is automatically handled by the retry logic. "
-        "If it keeps happening, add billing credits at console.anthropic.com to reach Tier 2."
-    ),
-    "failed to push some refs": (
-        "git_conflict",
-        "Git push conflict — two jobs tried to push at the same time. "
-        "Fixed by pull-before-push logic already in place. Safe to re-run."
-    ),
-    "not_in_channel": (
-        "slack_channel",
-        "Slack bot is not a member of the channel. "
-        "Fix: in Slack, type /invite @AgentOrg in the target channel."
-    ),
-    "ModuleNotFoundError": (
-        "missing_module",
-        "A Python package is missing. This usually means pyproject.toml needs updating."
-    ),
-    "FileNotFoundError": (
-        "missing_file",
-        "A required file was not found. Check that all previous agents ran successfully."
-    ),
-    "ANTHROPIC_API_KEY": (
-        "missing_key",
-        "Anthropic API key is missing or invalid. "
-        "Check GitHub Secrets → ANTHROPIC_API_KEY is set correctly."
-    ),
-    "TAVILY_API_KEY": (
-        "missing_key",
-        "Tavily API key is missing. Web search is disabled. "
-        "Add TAVILY_API_KEY to GitHub Secrets, or the agents will run without web search."
-    ),
-}
-
-
 class DebuggerAgent(BaseAgent):
     role = "debugger"
 
     def __init__(self) -> None:
         super().__init__()
-        self.model = config.VERIFIER_MODEL  # Sonnet is fine for debugging
+        self.model = config.VERIFIER_MODEL  # Sonnet is sufficient for debugging
         self.run_id = os.getenv("GITHUB_RUN_ID", "")
         self.repo = os.getenv("GITHUB_REPOSITORY", config.GITHUB_REPO)
 
-    def _fetch_failure_logs(self) -> str:
-        """Pull the failed job logs from GitHub Actions via gh CLI."""
-        if not self.run_id:
-            return "No GITHUB_RUN_ID available — cannot fetch logs."
+    # ── Inline recovery (primary mode) ────────────────────────────────────────
 
+    def consult(
+        self,
+        agent_role: str,
+        error: Exception,
+        original_prompt: str,
+        attempt: int = 1,
+    ) -> dict[str, Any]:
+        """
+        Called by a struggling agent mid-run. Returns one of:
+        - {"action": "retry", "modified_prompt": "..."} — agent should retry with this
+        - {"action": "escalate", "message": "..."} — cannot fix, notify Slack and stop
+
+        Args:
+            agent_role: which agent is struggling (planner, builder, etc.)
+            error: the exception that was raised
+            original_prompt: the prompt the agent was using when it failed
+            attempt: how many times we've already tried
+        """
+        error_text = f"{type(error).__name__}: {str(error)}"
+        tb = traceback.format_exc()[-2000:]
+
+        logger.info(f"[debugger] Consulting on {agent_role} failure (attempt {attempt}): {error_text}")
+        self.post_slack_progress(
+            "🔧", "consulting",
+            f"The {agent_role} hit a problem — diagnosing and attempting recovery... (attempt {attempt})"
+        )
+
+        # Hard stop after 3 attempts to avoid infinite loops
+        if attempt >= 3:
+            message = (
+                f"The {agent_role} failed {attempt} times and I cannot automatically fix it. "
+                f"Last error: {error_text}"
+            )
+            self.post_slack_progress("🚨", "escalating", message)
+            return {"action": "escalate", "message": message}
+
+        prompt = (
+            f"You are the debugger agent. The {agent_role} agent is struggling mid-run.\n\n"
+            f"## Error\n```\n{error_text}\n```\n\n"
+            f"## Stack Trace\n```\n{tb}\n```\n\n"
+            f"## Original Prompt (what the agent was trying to do)\n{original_prompt[:2000]}\n\n"
+            "Diagnose the root cause and decide:\n\n"
+            "Option A — If this is recoverable: respond with exactly:\n"
+            "ACTION: RETRY\n"
+            "MODIFIED_PROMPT: <a revised version of the prompt that avoids the problem>\n"
+            "REASON: <one sentence explaining what you changed and why>\n\n"
+            "Option B — If this cannot be fixed automatically: respond with exactly:\n"
+            "ACTION: ESCALATE\n"
+            "MESSAGE: <plain English explanation for a non-technical executive>\n\n"
+            "Common recoverable errors:\n"
+            "- Rate limits → suggest breaking the task into smaller chunks\n"
+            "- Content too long → suggest summarizing or focusing on one sub-topic\n"
+            "- Web search returned no results → suggest different search terms\n"
+            "- Timeout → suggest a simpler version of the task\n\n"
+            "Common non-recoverable errors:\n"
+            "- Missing API keys → escalate\n"
+            "- Authentication failures → escalate\n"
+            "- Repeated identical failures → escalate"
+        )
+
+        response = self.call_claude(prompt)
+
+        # Parse the response
+        if "ACTION: RETRY" in response:
+            # Extract the modified prompt
+            modified_prompt = original_prompt  # fallback
+            reason = ""
+            for line in response.split("\n"):
+                if line.startswith("MODIFIED_PROMPT:"):
+                    modified_prompt = line.replace("MODIFIED_PROMPT:", "").strip()
+                elif line.startswith("REASON:"):
+                    reason = line.replace("REASON:", "").strip()
+
+            # Handle multiline modified prompts
+            if "MODIFIED_PROMPT:" in response and "REASON:" in response:
+                start = response.index("MODIFIED_PROMPT:") + len("MODIFIED_PROMPT:")
+                end = response.index("REASON:")
+                modified_prompt = response[start:end].strip()
+
+            self.post_slack_progress(
+                "🔄", "retrying",
+                f"Found a fix for the {agent_role}. Retrying with adjusted approach. {reason}"
+            )
+            return {"action": "retry", "modified_prompt": modified_prompt, "reason": reason}
+
+        elif "ACTION: ESCALATE" in response:
+            message = ""
+            for line in response.split("\n"):
+                if line.startswith("MESSAGE:"):
+                    message = line.replace("MESSAGE:", "").strip()
+            if not message:
+                message = f"The {agent_role} failed and I could not automatically recover it."
+
+            self.post_slack_progress("🚨", "escalating", message)
+            return {"action": "escalate", "message": message}
+
+        else:
+            # Ambiguous response — escalate to be safe
+            self.post_slack_progress(
+                "🚨", "escalating",
+                f"The {agent_role} failed and the diagnosis was inconclusive. Last error: {error_text}"
+            )
+            return {"action": "escalate", "message": f"Unresolved failure in {agent_role}: {error_text}"}
+
+    # ── Post-failure mode (GitHub Actions fallback) ───────────────────────────
+
+    def _fetch_failure_logs(self) -> str:
+        """Pull failed job logs from GitHub Actions via gh CLI."""
+        if not self.run_id:
+            return "No GITHUB_RUN_ID — cannot fetch logs automatically."
         try:
             result = subprocess.run(
                 ["gh", "run", "view", self.run_id, "--log-failed", "--repo", self.repo],
-                capture_output=True,
-                text=True,
-                timeout=30,
+                capture_output=True, text=True, timeout=30,
             )
-            if result.returncode == 0:
-                # Trim to last 6000 chars to stay within token limits
-                logs = result.stdout[-6000:] if len(result.stdout) > 6000 else result.stdout
-                return logs
-            else:
-                return f"Could not fetch logs: {result.stderr[:500]}"
+            logs = result.stdout if result.returncode == 0 else result.stderr
+            return logs[-6000:] if len(logs) > 6000 else logs
         except Exception as e:
-            return f"Error fetching logs: {e}"
-
-    def _quick_diagnose(self, logs: str) -> tuple[str, str] | None:
-        """
-        Check if the error matches a known pattern we can explain immediately.
-        Returns (error_type, plain_english_explanation) or None if unknown.
-        """
-        for pattern, (error_type, explanation) in AUTO_FIXABLE.items():
-            if pattern in logs:
-                return error_type, explanation
-        return None
-
-    def _diagnose_with_claude(self, logs: str) -> str:
-        """Ask Claude to diagnose an unknown failure in plain English."""
-        prompt = (
-            "You are a debugging assistant for an autonomous AI research pipeline. "
-            "A GitHub Actions job has failed. Read the logs below and provide:\n\n"
-            "1. **Root Cause** — What went wrong, in one sentence\n"
-            "2. **Plain English Explanation** — What this means for a non-technical person\n"
-            "3. **Severity** — Is this: SELF-HEALING (will fix itself on retry) / "
-            "SIMPLE FIX (needs one small change) / NEEDS INVESTIGATION (unclear)\n"
-            "4. **Recommended Action** — Exactly what should be done next\n\n"
-            "Be concise. The output goes directly to Slack.\n\n"
-            f"## Failure Logs\n\n```\n{logs}\n```"
-        )
-        return self.call_claude(prompt)
+            return f"Could not fetch logs: {e}"
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
-        logger.info("[debugger] Pipeline failure detected — starting diagnosis.")
-
-        # Post immediate acknowledgement to Slack
+        """Post-failure mode — runs as a GitHub Actions job when the pipeline crashes."""
+        logger.info("[debugger] Post-failure mode: pipeline job crashed.")
         self.post_slack_progress(
             "⚠️", "activated",
-            "A pipeline failure was detected. Fetching logs and diagnosing now..."
+            "A pipeline crash was detected. Fetching logs and diagnosing..."
         )
 
-        # Fetch the failure logs
         logs = self._fetch_failure_logs()
-        logger.info(f"[debugger] Fetched {len(logs)} chars of failure logs")
 
         if dry_run:
-            diagnosis = "_Dry-run mode — no diagnosis performed._"
-            self.post_slack_progress("🔧", "dry-run", diagnosis)
-            return {"status": "dry_run"}
+            report_path = self.write_report("Debug Report", "_Dry-run mode._")
+            return {"status": "dry_run", "report": str(report_path)}
 
-        # Try quick pattern match first
-        quick = self._quick_diagnose(logs)
-
-        if quick:
-            error_type, explanation = quick
-            logger.info(f"[debugger] Known error type: {error_type}")
-            diagnosis = explanation
-            severity = "SELF-HEALING" if error_type in ("rate_limit", "git_conflict") else "SIMPLE FIX"
-        else:
-            # Unknown error — ask Claude
-            logger.info("[debugger] Unknown error — consulting Claude for diagnosis")
-            diagnosis = self._diagnose_with_claude(logs)
-            severity = "NEEDS INVESTIGATION"
-
-        # Write a full debug report
-        report_content = (
-            f"## Pipeline Failure Report\n\n"
-            f"**Run ID:** {self.run_id}\n"
-            f"**Severity:** {severity}\n\n"
-            f"### Diagnosis\n\n{diagnosis}\n\n"
-            f"### Raw Logs (last 3000 chars)\n\n```\n{logs[-3000:]}\n```"
+        prompt = (
+            "A GitHub Actions pipeline job has crashed completely. "
+            "Read the logs and produce a concise failure report:\n\n"
+            "1. **Root Cause** — one sentence\n"
+            "2. **Plain English** — what this means for a non-technical executive\n"
+            "3. **Severity** — SELF-HEALING / SIMPLE FIX / NEEDS INVESTIGATION\n"
+            "4. **Action Required** — exactly what should be done\n\n"
+            f"## Failure Logs\n```\n{logs}\n```"
         )
-        report_path = self.write_report("Debug Report", report_content)
 
-        # Post detailed Slack update
-        emoji = "🔄" if severity == "SELF-HEALING" else "🔧" if severity == "SIMPLE FIX" else "🚨"
-        slack_message = f"*{severity}*\n{diagnosis[:600]}"
-        self.post_slack_progress(emoji, f"diagnosis complete", slack_message)
+        diagnosis = self.call_claude(prompt)
+        report_path = self.write_report("Pipeline Crash Report", diagnosis)
 
-        logger.info(f"[debugger] Diagnosis complete. Severity: {severity}")
-        return {"status": "ok", "severity": severity, "report": str(report_path)}
+        # Extract severity for emoji
+        emoji = "🔄" if "SELF-HEALING" in diagnosis else "🔧" if "SIMPLE FIX" in diagnosis else "🚨"
+        self.post_slack_progress(emoji, "diagnosis complete", diagnosis[:500])
+
+        return {"status": "ok", "report": str(report_path)}
 
 
 def main(dry_run: bool = False) -> None:
