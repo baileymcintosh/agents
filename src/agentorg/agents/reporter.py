@@ -99,12 +99,50 @@ class ReporterAgent(BaseAgent):
         # Write the full Markdown report
         report_path = self.write_report("Executive Summary", summary)
 
-        # Generate charts from embedded chart_data blocks
+        # Generate charts — scan ALL builder reports for chart_data blocks, not just the summary
         chart_paths: list[Path] = []
         if not dry_run:
             try:
-                from agentorg.reporting.charts import generate_all_charts
-                chart_paths = generate_all_charts(summary, config.REPORTS_DIR)
+                from agentorg.reporting.charts import generate_all_charts, extract_chart_data
+                # Collect chart_data from every builder report in the session
+                combined_data: dict = {}
+                builder_files = sorted(config.REPORTS_DIR.glob("*_builder_*.md"), key=lambda f: f.stat().st_mtime)
+                for bf in builder_files:
+                    text = bf.read_text(encoding="utf-8")
+                    data = extract_chart_data(text)
+                    # Merge: later cycles append to lists, don't overwrite
+                    for key, val in data.items():
+                        if key in combined_data and isinstance(combined_data[key], list) and isinstance(val, list):
+                            combined_data[key].extend(val)
+                        else:
+                            combined_data[key] = val
+                # Also scan the summary itself
+                combined_data.update(extract_chart_data(summary))
+
+                # Generate whichever chart types we have data for
+                from agentorg.reporting.charts import scenario_probability_chart, market_impact_chart, timeline_chart
+                if "scenarios" in combined_data:
+                    p = scenario_probability_chart(
+                        combined_data["scenarios"][:10],  # cap at 10 bars
+                        config.REPORTS_DIR / "chart_scenarios.png",
+                        title=combined_data.get("scenario_title", "Scenario Probability Distribution"),
+                    )
+                    if p: chart_paths.append(p)
+                if "market_impacts" in combined_data:
+                    p = market_impact_chart(
+                        combined_data["market_impacts"][:12],
+                        config.REPORTS_DIR / "chart_market_impact.png",
+                        title=combined_data.get("market_title", "Estimated Market Impact by Asset Class"),
+                    )
+                    if p: chart_paths.append(p)
+                if "timeline" in combined_data:
+                    p = timeline_chart(
+                        combined_data["timeline"][:12],
+                        config.REPORTS_DIR / "chart_timeline.png",
+                        title=combined_data.get("timeline_title", "Event Timeline"),
+                    )
+                    if p: chart_paths.append(p)
+                logger.info(f"[reporter] Generated {len(chart_paths)} chart(s)")
             except Exception as e:
                 logger.warning(f"[reporter] Chart generation failed (non-fatal): {e}")
 
