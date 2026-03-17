@@ -258,7 +258,8 @@ class QualBuilderAgent:
         if not brief_path.exists():
             brief_path = config.ROOT_DIR / "BRIEF.md"
         brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else "Research the assigned topic thoroughly."
-        report = self.run_turn(brief)
+        messenger = AgentMessenger(run_id="standalone")
+        report = self.run_turn(turn=1, research_plan=brief, messenger=messenger, completed_sections=[])
         return {"status": "ok", "report": str(report)}
 
     def run_with_recovery(self, dry_run: bool = False) -> dict:

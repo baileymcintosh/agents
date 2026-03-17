@@ -266,8 +266,9 @@ class QuantBuilderAgent:
         if not brief_path.exists():
             brief_path = config.ROOT_DIR / "BRIEF.md"
         brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else "Analyse key market data and produce annotated charts."
-        report = self.run_turn(brief)
-        return {"status": "ok", "report": str(report)}
+        messenger = AgentMessenger(run_id="standalone")
+        findings, _ = self.run_turn(turn=1, research_plan=brief, messenger=messenger)
+        return {"status": "ok", "report": findings}
 
     def run_with_recovery(self, dry_run: bool = False) -> dict:
         """Compatibility shim — calls run()."""
