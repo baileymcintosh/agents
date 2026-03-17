@@ -1,0 +1,84 @@
+name: Preliminary Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_name:
+        description: "Project name (slug, no spaces)"
+        required: true
+        type: string
+      brief:
+        description: "Task brief"
+        required: true
+        type: string
+      team:
+        description: "Comma-separated agent roles e.g. researcher,data_analyst,reporter"
+        required: true
+        type: string
+
+env:
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+  TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+  FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+  EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+  # Prelim uses cheap/fast models
+  PLANNER_MODEL: "claude-opus-4-6"
+  RESEARCHER_MODEL: "llama-3.3-70b-versatile"
+  QUAL_BUILDER_MODEL: "llama-3.3-70b-versatile"
+  QUANT_BUILDER_MODEL: "deepseek-chat"
+  DATA_ANALYST_MODEL: "deepseek-chat"
+  CODER_MODEL: "deepseek-chat"
+  VERIFIER_MODEL: "llama-3.3-70b-versatile"
+  REPORTER_MODEL: "claude-sonnet-4-6"
+  TIME_BUDGET: "8m"
+  REPORTS_DIR: "reports"
+
+jobs:
+  prelim:
+    name: "Prelim: ${{ github.event.inputs.project_name }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.11
+      - run: uv sync
+
+      - name: Configure git
+        run: |
+          git config user.name "AgentOrg Bot"
+          git config user.email "agentorg-bot@users.noreply.github.com"
+
+      - name: Write project brief
+        run: |
+          mkdir -p "projects/${{ github.event.inputs.project_name }}/reports"
+          echo "${{ github.event.inputs.brief }}" > "projects/${{ github.event.inputs.project_name }}/BRIEF.md"
+          echo "REPORTS_DIR=projects/${{ github.event.inputs.project_name }}/reports" >> $GITHUB_ENV
+
+      - name: Run preliminary agents
+        run: |
+          TEAM="${{ github.event.inputs.team }}"
+          IFS=',' read -ra ROLES <<< "$TEAM"
+
+          for role in "${ROLES[@]}"; do
+            role=$(echo "$role" | tr -d ' ')
+            if [ "$role" = "reporter" ]; then continue; fi
+            echo "--- $role ---"
+            uv run agentorg run "$role" --time-budget 8m || echo "$role error — continuing"
+          done
+
+          echo "--- reporter ---"
+          uv run agentorg run reporter --time-budget 4m || echo "reporter error"
+
+      - name: Push outputs
+        run: |
+          git add "projects/${{ github.event.inputs.project_name }}/"
+          git diff --staged --quiet || git commit -m "prelim: ${{ github.event.inputs.project_name }} initial outputs"
+          git pull --rebase origin main
+          git push

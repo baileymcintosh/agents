@@ -1,0 +1,98 @@
+name: Deep Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_name:
+        description: "Project name (must match an existing projects/ directory)"
+        required: true
+        type: string
+      team:
+        description: "Comma-separated agent roles"
+        required: true
+        type: string
+      feedback:
+        description: "Feedback from preliminary run (optional)"
+        required: false
+        type: string
+      model_tier:
+        description: "sonnet = cheaper | opus = best quality"
+        required: false
+        default: "sonnet"
+        type: choice
+        options: ["sonnet", "opus"]
+
+env:
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+  TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+  FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+  EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+  PLANNER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
+  QUAL_BUILDER_MODEL: "gpt-4o"
+  QUANT_BUILDER_MODEL: "claude-sonnet-4-6"
+  REPORTER_MODEL: "claude-sonnet-4-6"
+  REPORTS_DIR: "reports"
+
+jobs:
+  deep:
+    name: "Deep: ${{ github.event.inputs.project_name }} (${{ github.event.inputs.model_tier }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.11
+      - run: uv sync
+
+      - name: Install pandoc + LaTeX
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends pandoc texlive-xetex texlive-fonts-recommended fonts-dejavu
+
+      - name: Configure git
+        run: |
+          git config user.name "AgentOrg Bot"
+          git config user.email "agentorg-bot@users.noreply.github.com"
+
+      - name: Write feedback if provided
+        if: ${{ github.event.inputs.feedback != '' }}
+        run: |
+          echo "${{ github.event.inputs.feedback }}" > "projects/${{ github.event.inputs.project_name }}/FEEDBACK.md"
+          echo "REPORTS_DIR=projects/${{ github.event.inputs.project_name }}/reports" >> $GITHUB_ENV
+
+      - name: Run deep agents
+        run: |
+          TEAM="${{ github.event.inputs.team }}"
+          IFS=',' read -ra ROLES <<< "$TEAM"
+
+          # Run parallel-capable roles simultaneously
+          PIDS=()
+          for role in "${ROLES[@]}"; do
+            role=$(echo "$role" | tr -d ' ')
+            if [[ "$role" == "reporter" || "$role" == "verifier" ]]; then continue; fi
+            echo "--- $role (background) ---"
+            uv run agentorg run "$role" &
+            PIDS+=($!)
+          done
+          for pid in "${PIDS[@]}"; do wait "$pid" || echo "agent exited with error"; done
+
+          # Sequential finishing roles
+          for role in verifier reporter; do
+            if echo "$TEAM" | grep -q "$role"; then
+              echo "--- $role ---"
+              uv run agentorg run "$role" || echo "$role error"
+            fi
+          done
+
+      - name: Push outputs
+        run: |
+          git add "projects/${{ github.event.inputs.project_name }}/"
+          git diff --staged --quiet || git commit -m "deep: ${{ github.event.inputs.project_name }} outputs"
+          git pull --rebase origin main
+          git push
