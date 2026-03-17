@@ -47,11 +47,20 @@ class BaseAgent(ABC):
     def _is_openai_model(self) -> bool:
         return self.model.startswith(("gpt-", "o1", "o3", "o4", "codex"))
 
-    def _call_openai(self, user_message: str) -> str:
-        """Simple OpenAI chat completion — used when self.model is a GPT/o-series model."""
+    def _is_groq_model(self) -> bool:
+        return self.model.startswith(("llama-", "mixtral-", "gemma-", "whisper-")) or "groq" in self.model
+
+    def _is_deepseek_model(self) -> bool:
+        return self.model.startswith("deepseek-")
+
+    def _call_openai_compat(self, user_message: str, base_url: str | None, api_key: str, provider: str) -> str:
+        """OpenAI-compatible chat completion — works for OpenAI, Groq, DeepSeek."""
         import openai
-        client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
-        logger.info(f"[{self.role}] → OpenAI ({self.model})")
+        kwargs: dict = {"api_key": api_key}
+        if base_url:
+            kwargs["base_url"] = base_url
+        client = openai.OpenAI(**kwargs)
+        logger.info(f"[{self.role}] → {provider} ({self.model})")
         for attempt in range(4):
             try:
                 response = client.chat.completions.create(
@@ -66,10 +75,14 @@ class BaseAgent(ABC):
             except Exception as e:
                 if "rate" in str(e).lower() and attempt < 3:
                     wait = 30 * (2 ** attempt)
-                    logger.warning(f"[{self.role}] OpenAI rate limit — waiting {wait}s")
+                    logger.warning(f"[{self.role}] {provider} rate limit — waiting {wait}s")
                     time.sleep(wait)
                 else:
                     raise
+        return ""
+
+    def _call_openai(self, user_message: str) -> str:
+        return self._call_openai_compat(user_message, None, config.OPENAI_API_KEY, "OpenAI")
 
     def _load_system_prompt(self) -> str:
         prompt_path = config.AGENT_DOCS_DIR / f"{self.role}.md"
@@ -90,6 +103,10 @@ class BaseAgent(ABC):
 
         if self._is_openai_model():
             return self._call_openai(content)
+        if self._is_groq_model():
+            return self._call_openai_compat(content, config.GROQ_BASE_URL, config.GROQ_API_KEY, "Groq")
+        if self._is_deepseek_model():
+            return self._call_openai_compat(content, config.DEEPSEEK_BASE_URL, config.DEEPSEEK_API_KEY, "DeepSeek")
         messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
 
         # Inject time context into the message if a budget is active

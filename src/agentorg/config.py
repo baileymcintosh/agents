@@ -19,16 +19,30 @@ ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 AGENT_MODEL: str = os.getenv("AGENT_MODEL", "claude-sonnet-4-6")
 AGENT_MAX_TOKENS: int = int(os.getenv("AGENT_MAX_TOKENS", "8000"))
 
-# Per-role model overrides — defaults shown, override via environment variables
+# Per-role model overrides
+# Tier 1 — expensive, used sparingly: planner + debugger only
 PLANNER_MODEL: str = os.getenv("PLANNER_MODEL", "claude-opus-4-6")
-BUILDER_MODEL: str = os.getenv("BUILDER_MODEL", "claude-opus-4-6")
+DEBUGGER_MODEL: str = os.getenv("DEBUGGER_MODEL", "claude-opus-4-6")
+# Tier 2 — mid-tier: deep research synthesis
+BUILDER_MODEL: str = os.getenv("BUILDER_MODEL", "claude-sonnet-4-6")
 VERIFIER_MODEL: str = os.getenv("VERIFIER_MODEL", "claude-sonnet-4-6")
-REPORTER_MODEL: str = os.getenv("REPORTER_MODEL", "gpt-5.4")
+REPORTER_MODEL: str = os.getenv("REPORTER_MODEL", "claude-sonnet-4-6")
+# Tier 3 — fast/cheap: preliminary runs and search loops
+PRELIM_MODEL: str = os.getenv("PRELIM_MODEL", "llama-3.3-70b-versatile")  # Groq, free tier
+SEARCH_WORKER_MODEL: str = os.getenv("SEARCH_WORKER_MODEL", "llama-3.3-70b-versatile")  # Groq
 
-# OpenAI — used by the qual builder (qualitative/policy analyst)
+# OpenAI
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-QUAL_BUILDER_MODEL: str = os.getenv("QUAL_BUILDER_MODEL", "gpt-5.4")
+QUAL_BUILDER_MODEL: str = os.getenv("QUAL_BUILDER_MODEL", "gpt-4o")   # was gpt-5.4 — 20x cheaper
 QUANT_BUILDER_MODEL: str = os.getenv("QUANT_BUILDER_MODEL", "claude-sonnet-4-6")
+
+# Groq — OpenAI-compatible, free tier, very fast (used for preliminary runs + search workers)
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
+
+# DeepSeek — OpenAI-compatible, very cheap, strong at code/data (~$0.28/1M tokens)
+DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
 
 # Collaborative session — how many back-and-forth turns between qual and quant per cycle
 SESSION_COLLAB_TURNS: int = int(os.getenv("SESSION_COLLAB_TURNS", "3"))
