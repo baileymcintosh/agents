@@ -19,6 +19,12 @@ ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 AGENT_MODEL: str = os.getenv("AGENT_MODEL", "claude-sonnet-4-6")
 AGENT_MAX_TOKENS: int = int(os.getenv("AGENT_MAX_TOKENS", "8000"))
 
+# Per-role model overrides — defaults shown, override via environment variables
+PLANNER_MODEL: str = os.getenv("PLANNER_MODEL", "claude-opus-4-6")
+BUILDER_MODEL: str = os.getenv("BUILDER_MODEL", "claude-opus-4-6")
+VERIFIER_MODEL: str = os.getenv("VERIFIER_MODEL", "claude-sonnet-4-6")
+REPORTER_MODEL: str = os.getenv("REPORTER_MODEL", "claude-sonnet-4-6")
+
 # Slack
 SLACK_BOT_TOKEN: str = os.getenv("SLACK_BOT_TOKEN", "")
 SLACK_SIGNING_SECRET: str = os.getenv("SLACK_SIGNING_SECRET", "")

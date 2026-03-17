@@ -7,10 +7,15 @@ from typing import Any
 from loguru import logger
 
 from agentorg.agents.base import BaseAgent
+from agentorg import config
 
 
 class PlannerAgent(BaseAgent):
     role = "planner"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.model = config.PLANNER_MODEL
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("[planner] Starting planning cycle.")

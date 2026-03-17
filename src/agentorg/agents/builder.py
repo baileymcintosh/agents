@@ -11,8 +11,15 @@ from agentorg.agents.base import BaseAgent
 from agentorg import config
 
 
+
+
+
 class BuilderAgent(BaseAgent):
     role = "builder"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.model = config.BUILDER_MODEL
 
     def _load_latest_plan(self) -> str:
         """Read the most recent planner report to understand current tasks."""

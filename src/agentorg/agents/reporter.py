@@ -10,8 +10,15 @@ from agentorg.agents.base import BaseAgent
 from agentorg import config
 
 
+
+
+
 class ReporterAgent(BaseAgent):
     role = "reporter"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.model = config.REPORTER_MODEL
 
     def _gather_recent_reports(self) -> str:
         """Collect the latest planner, builder, and verifier reports."""

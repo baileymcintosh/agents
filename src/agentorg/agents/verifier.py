@@ -11,8 +11,15 @@ from agentorg.agents.base import BaseAgent
 from agentorg import config
 
 
+
+
+
 class VerifierAgent(BaseAgent):
     role = "verifier"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.model = config.VERIFIER_MODEL
 
     def _load_latest_build(self) -> str:
         builds = sorted(
