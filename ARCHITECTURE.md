@@ -9,7 +9,7 @@ flowchart TD
     research_session.yml`"]) --> Planner
 
     Planner["🗺️ **Planner**
-    Claude Opus/Sonnet
+    Claude Opus 4.6
     Sets research agenda
     Assigns qual + quant tasks"]
 
@@ -19,7 +19,7 @@ flowchart TD
         direction LR
 
         Qual["🌐 **Qual Builder**
-        OpenAI GPT-4o
+        OpenAI GPT-5.4
         ───────────────
         • News & wire services
         • Official statements
@@ -28,7 +28,7 @@ flowchart TD
         • Tavily web search"]
 
         Quant["📊 **Quant Builder**
-        Claude Opus/Sonnet
+        Claude Sonnet 4.6
         ───────────────
         • Live market data
         • yfinance / FRED / EIA
@@ -45,14 +45,14 @@ flowchart TD
     Session --> Verifier
 
     Verifier["✅ **Verifier**
-    Claude Sonnet
+    Claude Sonnet 4.6
     Fact-checks both outputs
     Flags inconsistencies"]
 
     Verifier --> Reporter
 
     Reporter["📝 **Reporter**
-    Claude Sonnet
+    OpenAI GPT-5.4
     ───────────────
     Synthesises qual + quant
     into executive summary
