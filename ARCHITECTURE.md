@@ -1,136 +1,66 @@
-# AgentOrg — System Architecture
+# Architecture
 
-## Research Session Flow
+## Workflow
 
 ```mermaid
 flowchart TD
-    Trigger(["`**Trigger**
-    GitHub Actions
-    research_session.yml`"]) --> Planner
+    U([Bailey]) -->|project brief| CC[Claude Code\nOrchestrator]
+    CC -->|proposes team| U
+    U -->|approves| CC
+    CC -->|triggers| P[prelim.yml\nGitHub Actions]
 
-    Planner["🗺️ **Planner**
-    Claude Opus 4.6
-    Sets research agenda
-    Assigns qual + quant tasks"]
-
-    Planner --> Session
-
-    subgraph Session ["⚡ Collaborative Session — runs in parallel"]
-        direction LR
-
-        Qual["🌐 **Qual Builder**
-        OpenAI GPT-5.4
-        ───────────────
-        • News & wire services
-        • Official statements
-        • Geopolitical context
-        • Historical parallels
-        • Tavily web search"]
-
-        Quant["📊 **Quant Builder**
-        Claude Sonnet 4.6
-        ───────────────
-        • Live market data
-        • yfinance / FRED / EIA
-        • Python code execution
-        • Annotated charts
-        • Statistical analysis"]
-
-        Qual -- "I see event X on date Y,
-        check it in the data" --> Quant
-        Quant -- "I see a spike on Mar 2,
-        what caused it?" --> Qual
+    subgraph Prelim Run - cheap models, <10 min
+        P --> QB1[qual_builder\nGroq Llama 3.3 70B\nweb search]
+        P --> QT1[quant_builder\nClaude Sonnet\nPython + data]
+        QB1 & QT1 --> R1[reporter\nClaude Sonnet]
     end
 
-    Session --> Verifier
+    R1 -->|pushes outputs| PR[(project repo\nbaileymcintosh/project-name)]
+    CC -->|notifies + link| U
+    U -->|feedback| CC
+    CC -->|triggers| D[deep.yml\nGitHub Actions]
 
-    Verifier["✅ **Verifier**
-    Claude Sonnet 4.6
-    Fact-checks both outputs
-    Flags inconsistencies"]
+    subgraph Deep Run - full models
+        D --> QB2[qual_builder\nGPT-4o]
+        D --> QT2[quant_builder\nClaude Sonnet]
+        QB2 & QT2 --> V[verifier\nClaude Sonnet]
+        V --> R2[reporter\nClaude Sonnet]
+    end
 
-    Verifier --> Reporter
-
-    Reporter["📝 **Reporter**
-    OpenAI GPT-5.4
-    ───────────────
-    Synthesises qual + quant
-    into executive summary
-    Embeds charts inline
-    Outputs .ipynb + .md"]
-
-    Reporter --> Output
-
-    Output["📁 **reports/**
-    ───────────────
-    executive_summary.ipynb  ← open in VS Code
-    executive_summary.md
-    chart_quant_*.png        ← real market data charts
-    chart_scenarios.png
-    agent_messages.json      ← cross-agent dialogue log"]
-
-    Debugger["🔧 **Debugger**
-    Claude Sonnet
-    Auto-fires on failure
-    Diagnoses + reports"]
-
-    Session -.->|on failure| Debugger
-    Verifier -.->|on failure| Debugger
+    R2 -->|pushes outputs| PR
+    CC -->|notifies + link| U
 ```
 
----
+## Agent roles
 
-## Agent Roles
-
-| Agent | Model | Tools | Role |
+| Agent | Model (prelim) | Model (deep) | Purpose |
 |---|---|---|---|
-| **Planner** | Claude Opus *(premium)* | Web search | Sets research agenda, assigns sections, tracks completion |
-| **Qual Builder** | OpenAI GPT-5.4 | Web search (Tavily) | Policy analyst — news, speeches, geopolitical narrative |
-| **Quant Builder** | Claude Sonnet | Python exec + Web search | Data scientist — live prices, charts, statistical analysis |
-| **Verifier** | Claude Sonnet | Web search | Fact-checker — cross-checks both builders against sources |
-| **Reporter** | OpenAI GPT-5.4 | — | Senior editor — synthesises everything into final document |
-| **Debugger** | Claude Sonnet | Web search + logs | Auto-fires on failure, diagnoses issues |
+| team_planner | Claude Opus | Claude Opus | Reads brief, proposes custom team |
+| qual_builder | Groq Llama 3.3 70B | GPT-4o | Web search, news, policy, narrative |
+| quant_builder | Claude Sonnet | Claude Sonnet | Python execution, live data, charts |
+| verifier | Groq Llama | Claude Sonnet | QA and fact-checking |
+| reporter | Claude Sonnet | Claude Sonnet | Synthesis → report + notebook |
+| debugger | Claude Opus | Claude Opus | Failure recovery |
 
----
+## Data sources
 
-## Cross-Agent Messaging
-
-Qual and Quant run as **parallel threads** sharing a message bus:
-
-```
-Quant: "Brent crude +$20 (8%) between 06:00–10:00 UTC on Mar 2.
-        What event caused this spike?"
-          ↓
-Qual:  "Iran struck Qatar's Ras Laffan LNG terminal at ~08:30 UTC.
-        Qatar declared force majeure on all LNG shipments 2hrs later.
-        Source: Reuters March 2, 2026 14:22 GMT.
-        Also check: LNG futures (NG=F) and Qatar ETF (QAT) same window."
-          ↓
-Quant: [annotates oil chart with event label, adds LNG panel, checks QAT]
-```
-
-The full dialogue is saved to `reports/*_session_dialogue.md` and included in the reporter's synthesis.
-
----
-
-## Data Sources
-
-| Source | Key Required | Data |
+| Source | Access | Used by |
 |---|---|---|
-| **yfinance** | None | Equities, futures (oil, gold), indices, ETFs, forex |
-| **FRED** | `FRED_API_KEY` ✓ | CPI, GDP, Fed funds rate, Treasury yields, macro |
-| **EIA** | `EIA_API_KEY` ✓ | Oil/gas inventories, production, Hormuz flows |
-| **Tavily** | `TAVILY_API_KEY` ✓ | Real-time web search for both qual and quant |
-| **Kalshi** | `KALSHI_API_KEY` ✓ | Prediction market probabilities (future use) |
+| Tavily | API | qual_builder — web search |
+| yfinance | pip | quant_builder — equity/commodity prices |
+| FRED | API | quant_builder — macro data |
+| EIA | API | quant_builder — energy data |
+| Kalshi | API | quant_builder — prediction markets |
 
----
+## Project repo structure
 
-## Workflow Inputs (GitHub Actions)
-
-Trigger **Research Session** from [Actions → Research Session](https://github.com/baileymcintosh/agents/actions/workflows/research_session.yml):
-
-| Input | Options | Effect |
-|---|---|---|
-| `time_budget` | `30m`, `2h`, `20h` | How long the session runs |
-| `model_tier` | `sonnet` (~$1–3) / `opus` (~$7–10) | Claude model quality/cost for planner + quant |
-| `collab_turns` | `2`–`5` | Cross-check turns per agent per cycle |
+Each project gets its own GitHub repo:
+```
+baileymcintosh/<project-name>/
+  BRIEF.md          original task brief
+  PLAN.md           proposed team + research goals
+  FEEDBACK.md       feedback between runs
+  reports/          agent outputs (Markdown + .ipynb)
+  data/             raw data files
+  notebooks/        interactive notebooks
+```

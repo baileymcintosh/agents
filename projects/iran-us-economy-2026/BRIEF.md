@@ -1,1 +1,0 @@
-Up to date account and analysis of the Iran-USA-Israel war in 2026 and its implications on the US economy. Cover: current military situation and key events, oil market impact (prices, supply disruption, Strait of Hormuz), broader US economic effects (inflation, energy costs, market reaction), and geopolitical context.
