@@ -44,7 +44,7 @@ PDF_EXPORT_ENABLED: bool = os.getenv("PDF_EXPORT_ENABLED", "true").lower() == "t
 
 # Fast mode — all agents use Sonnet, reduced token limits, skip PDF, one-job pipeline
 FAST_MODE: bool = os.getenv("FAST_MODE", "false").lower() == "true"
-FAST_MAX_TOKENS: int = int(os.getenv("FAST_MAX_TOKENS", "1800"))
+FAST_MAX_TOKENS: int = int(os.getenv("FAST_MAX_TOKENS", "1200"))
 
 # Slack bot user ID — used by listener to filter out the bot's own messages
 SLACK_BOT_USER_ID: str = os.getenv("SLACK_BOT_USER_ID", "")

@@ -40,12 +40,11 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - run: uv python install 3.11
       - run: uv sync
-      - name: Run all agents (fast mode)
+      - name: Run all agents (fast mode — no web search, skip verifier)
         run: |
           FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
           uv run agentorg run planner $FLAG
           uv run agentorg run builder $FLAG
-          uv run agentorg run verifier $FLAG
           uv run agentorg run reporter $FLAG
       - name: Push reports
         run: |

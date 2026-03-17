@@ -61,10 +61,14 @@ class BaseAgent(ABC):
         content = f"{extra_context}\n\n{user_message}" if extra_context else user_message
         messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
 
-        tools = [SEARCH_TOOL_DEFINITION] if self.use_search else []
+        # Fast mode: skip web search entirely so each agent completes in ~20-30s
+        search_enabled = self.use_search and not config.FAST_MODE
+        tools = [SEARCH_TOOL_DEFINITION] if search_enabled else []
 
-        if self.use_search:
+        if search_enabled:
             logger.info(f"[{self.role}] → Claude ({self.model}) with web search enabled")
+        elif config.FAST_MODE:
+            logger.info(f"[{self.role}] → Claude ({self.model}) — fast mode, web search disabled")
         else:
             logger.info(f"[{self.role}] → Claude ({self.model}) — no web search (TAVILY_API_KEY not set)")
 
