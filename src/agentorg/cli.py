@@ -21,15 +21,26 @@ ROLES = ["planner", "builder", "verifier", "reporter", "debugger"]
 def run(
     role: str = typer.Argument(help=f"Agent role to run: {' | '.join(ROLES)}"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print plan without executing"),
+    time_budget: str = typer.Option("", "--time-budget", "-t", help="Time budget e.g. 5m, 2h, 20h (planner sets the clock for all agents)"),
 ) -> None:
     """Run a specific agent role."""
     if role not in ROLES:
         console.print(f"[red]Unknown role '{role}'. Valid roles: {', '.join(ROLES)}[/red]")
         raise typer.Exit(1)
 
+    # Allow --time-budget flag to override env var
+    if time_budget:
+        import os
+        os.environ["TIME_BUDGET"] = time_budget
+        # Reload config value so agents pick it up
+        import agentorg.config as _cfg
+        _cfg.TIME_BUDGET = time_budget
+
     console.print(f"[bold green]Starting agent:[/bold green] {role}")
     if dry_run:
         console.print("[yellow]Dry-run mode — no changes will be made.[/yellow]")
+    if time_budget:
+        console.print(f"[cyan]Time budget:[/cyan] {time_budget}")
 
     module = importlib.import_module(f"agentorg.agents.{role}")
     if role == "debugger":

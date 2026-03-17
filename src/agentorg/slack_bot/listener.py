@@ -39,11 +39,14 @@ HELP_TEXT = """\
 • `run all` — full research pipeline (Opus, deep mode)
 • `run fast` — full pipeline, fast mode (~5 min, Sonnet)
 • `run planner` / `run builder` / `run verifier` / `run reporter` — individual agents
+• Add a time budget to any run command: `run fast 5m`, `run all 2h`, `run all 20h`
 • `status` — show recent reports
 • `help` — show this message
+
+*Time budget examples:* `5m` = 5 minutes, `2h` = 2 hours, `20h` = 20 hours
 """
 
-COMMAND_MAP = {
+BASE_COMMANDS = {
     "run all": ("nightly.yml", {}),
     "run fast": ("nightly.yml", {"fast_mode": "true"}),
     "run planner": ("run_agent.yml", {"agent": "planner"}),
@@ -163,13 +166,22 @@ class SlackListener:
                 self._slack_post(self._get_status(), thread_ts=ts)
                 continue
 
-            for command, (workflow, inputs) in COMMAND_MAP.items():
-                if text == command:
+            for command, (workflow, inputs) in BASE_COMMANDS.items():
+                # Support optional time budget suffix: "run fast 5m", "run all 2h"
+                if text == command or text.startswith(command + " "):
+                    # Extract optional time budget from end of message
+                    extra = text[len(command):].strip()
+                    run_inputs = dict(inputs)
+                    budget_display = ""
+                    if extra:
+                        run_inputs["time_budget"] = extra
+                        budget_display = f" (budget: {extra})"
+
                     self._slack_post(
-                        f":hourglass_flowing_sand: Got it — triggering `{command}`...",
+                        f":hourglass_flowing_sand: Got it — triggering `{command}`{budget_display}...",
                         thread_ts=ts,
                     )
-                    success = self._trigger_workflow(workflow, inputs)
+                    success = self._trigger_workflow(workflow, run_inputs)
                     if success:
                         self._slack_post(
                             f":white_check_mark: `{command}` dispatched. You'll get Slack updates as it runs.",

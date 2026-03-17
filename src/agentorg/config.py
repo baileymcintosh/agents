@@ -46,5 +46,9 @@ PDF_EXPORT_ENABLED: bool = os.getenv("PDF_EXPORT_ENABLED", "true").lower() == "t
 FAST_MODE: bool = os.getenv("FAST_MODE", "false").lower() == "true"
 FAST_MAX_TOKENS: int = int(os.getenv("FAST_MAX_TOKENS", "1200"))
 
+# Time budget — if set, agents calibrate depth to finish within the budget
+# Set as a human string e.g. "5m", "2h", "20h" or bare minutes e.g. "120"
+TIME_BUDGET: str = os.getenv("TIME_BUDGET", "")  # empty = unlimited
+
 # Slack bot user ID — used by listener to filter out the bot's own messages
 SLACK_BOT_USER_ID: str = os.getenv("SLACK_BOT_USER_ID", "")

@@ -8,6 +8,7 @@ from loguru import logger
 
 from agentorg.agents.base import BaseAgent
 from agentorg import config
+from agentorg.timing import RunClock, parse_budget_string
 
 
 class PlannerAgent(BaseAgent):
@@ -20,6 +21,13 @@ class PlannerAgent(BaseAgent):
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("[planner] Starting planning cycle.")
+
+        # Planner always initializes the clock — it runs first in every pipeline
+        if config.TIME_BUDGET and not self.clock:
+            budget_minutes = parse_budget_string(config.TIME_BUDGET)
+            self.clock = RunClock.initialize(budget_minutes)
+            logger.info(f"[planner] Time budget: {budget_minutes:.0f} min")
+
         self.post_slack_progress("🔍", "starting", "Reading the project brief and scanning for current intelligence...")
 
         project_brief = ""
@@ -27,11 +35,14 @@ class PlannerAgent(BaseAgent):
         if project_path.exists():
             project_brief = f"## Active Project Brief\n\n{project_path.read_text(encoding='utf-8')}"
 
+        time_allocation = self.clock.planner_context() if self.clock else ""
+
         prompt = (
             "Read the active project brief below carefully. "
             "Survey what research has already been completed by checking prior reports. "
             "Produce a detailed research plan for this cycle: identify the highest-priority section "
             "to work on next, write a precise brief for the Builder, and track overall project progress.\n\n"
+            f"{time_allocation}"
             f"{project_brief}"
         )
 

@@ -17,6 +17,11 @@ on:
         default: "false"
         type: choice
         options: ["true", "false"]
+      time_budget:
+        description: "Time budget for agent work e.g. 5m, 30m, 2h, 20h (empty = unlimited)"
+        required: false
+        default: ""
+        type: string
 
 # Shared env vars available to all jobs
 env:
@@ -25,6 +30,7 @@ env:
   SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
   SLACK_EXECUTIVE_CHANNEL_ID: ${{ secrets.SLACK_EXECUTIVE_CHANNEL_ID }}
   FAST_MODE: ${{ github.event.inputs.fast_mode || 'false' }}
+  TIME_BUDGET: ${{ github.event.inputs.time_budget || '' }}
   GITHUB_REPOSITORY: ${{ github.repository }}
 
 jobs:

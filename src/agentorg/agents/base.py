@@ -13,6 +13,7 @@ import anthropic
 from loguru import logger
 
 from agentorg import config
+from agentorg.timing import RunClock
 from agentorg.tools.search import SEARCH_TOOL_DEFINITION, web_search, format_search_results
 
 
@@ -41,6 +42,7 @@ class BaseAgent(ABC):
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self.system_prompt = self._load_system_prompt()
         self.use_search = bool(config.TAVILY_API_KEY)
+        self.clock: RunClock | None = RunClock.load()
 
     def _load_system_prompt(self) -> str:
         prompt_path = config.AGENT_DOCS_DIR / f"{self.role}.md"
@@ -61,10 +63,25 @@ class BaseAgent(ABC):
         content = f"{extra_context}\n\n{user_message}" if extra_context else user_message
         messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
 
+        # Inject time context into the message if a budget is active
+        if self.clock:
+            time_ctx = self.clock.prompt_context(self.role)
+            content = time_ctx + "\n\n" + content
+            # Dynamically cap max_tokens to the clock's token hint
+            token_cap = self.clock.token_hint()
+            effective_max_tokens = min(self.max_tokens, token_cap)
+        else:
+            effective_max_tokens = self.max_tokens
+
         tools = [SEARCH_TOOL_DEFINITION] if self.use_search else []
-        # Fast mode: cap searches at 2 per agent (3 results each) to stay under ~60s per agent
-        max_searches = 2 if config.FAST_MODE else 999
-        fast_max_results = 3
+        # Search cap: clock-driven if budget set, else 2 in fast mode, else unlimited
+        if self.clock:
+            max_searches = self.clock.max_searches()
+        elif config.FAST_MODE:
+            max_searches = 2
+        else:
+            max_searches = 999
+        fast_max_results = 3 if (config.FAST_MODE or bool(self.clock)) else 8
         search_count = 0
 
         if self.use_search:
@@ -79,7 +96,7 @@ class BaseAgent(ABC):
         while True:
             kwargs: dict[str, Any] = {
                 "model": self.model,
-                "max_tokens": self.max_tokens,
+                "max_tokens": effective_max_tokens,
                 "system": self.system_prompt,
                 "messages": messages,
             }
