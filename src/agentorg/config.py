@@ -30,5 +30,8 @@ SLACK_ALERTS_CHANNEL_ID: str = os.getenv("SLACK_ALERTS_CHANNEL_ID", "")
 GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO: str = os.getenv("GITHUB_REPO", "")
 
+# Web Search (Tavily — https://tavily.com, free tier available)
+TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
+
 # Reporting
 PDF_EXPORT_ENABLED: bool = os.getenv("PDF_EXPORT_ENABLED", "true").lower() == "true"

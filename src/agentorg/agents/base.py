@@ -11,6 +11,7 @@ import anthropic
 from loguru import logger
 
 from agentorg import config
+from agentorg.tools.search import SEARCH_TOOL_DEFINITION, web_search, format_search_results
 
 
 class BaseAgent(ABC):
@@ -19,7 +20,7 @@ class BaseAgent(ABC):
 
     Responsibilities:
     - Load a role-specific system prompt from agent_docs/<role>.md
-    - Call Claude with that prompt
+    - Call Claude with web search tool use enabled
     - Write a timestamped Markdown report to reports/
     """
 
@@ -32,6 +33,7 @@ class BaseAgent(ABC):
         self.reports_dir = config.REPORTS_DIR
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self.system_prompt = self._load_system_prompt()
+        self.use_search = bool(config.TAVILY_API_KEY)
 
     def _load_system_prompt(self) -> str:
         prompt_path = config.AGENT_DOCS_DIR / f"{self.role}.md"
@@ -44,18 +46,74 @@ class BaseAgent(ABC):
         )
 
     def call_claude(self, user_message: str, extra_context: str = "") -> str:
-        """Send a message to Claude and return the text response."""
+        """
+        Send a message to Claude with web search tool use enabled.
+        Claude will automatically call web_search as many times as needed,
+        and we execute those calls and return results until Claude is done.
+        """
         content = f"{extra_context}\n\n{user_message}" if extra_context else user_message
         messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
 
-        logger.info(f"[{self.role}] → Claude ({self.model})")
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=self.system_prompt,
-            messages=messages,
-        )
-        return str(response.content[0].text)  # type: ignore[union-attr]
+        tools = [SEARCH_TOOL_DEFINITION] if self.use_search else []
+
+        if self.use_search:
+            logger.info(f"[{self.role}] → Claude ({self.model}) with web search enabled")
+        else:
+            logger.info(f"[{self.role}] → Claude ({self.model}) — no web search (TAVILY_API_KEY not set)")
+
+        # Agentic loop: keep running until Claude stops using tools
+        while True:
+            kwargs: dict[str, Any] = {
+                "model": self.model,
+                "max_tokens": self.max_tokens,
+                "system": self.system_prompt,
+                "messages": messages,
+            }
+            if tools:
+                kwargs["tools"] = tools
+
+            response = self.client.messages.create(**kwargs)
+
+            # If Claude is done (no more tool calls), return the text
+            if response.stop_reason == "end_turn":
+                text_blocks = [b.text for b in response.content if hasattr(b, "text")]
+                return "\n\n".join(text_blocks)
+
+            # If Claude wants to use tools, execute them and continue
+            if response.stop_reason == "tool_use":
+                # Add Claude's response to message history
+                messages.append({"role": "assistant", "content": response.content})
+
+                # Execute each tool call
+                tool_results = []
+                for block in response.content:
+                    if block.type == "tool_use":
+                        tool_name = block.name
+                        tool_input = block.input
+
+                        if tool_name == "web_search":
+                            query = tool_input.get("query", "")
+                            max_results = tool_input.get("max_results", 8)
+                            logger.info(f"[{self.role}] Web search: '{query}'")
+                            results = web_search(query, max_results=max_results)
+                            result_text = format_search_results(results)
+                        else:
+                            result_text = f"Unknown tool: {tool_name}"
+
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result_text,
+                        })
+
+                # Add tool results to message history and loop
+                messages.append({"role": "user", "content": tool_results})
+                continue
+
+            # Unexpected stop reason
+            logger.warning(f"[{self.role}] Unexpected stop_reason: {response.stop_reason}")
+            text_blocks = [b.text for b in response.content if hasattr(b, "text")]
+            return "\n\n".join(text_blocks)
 
     def write_report(self, title: str, content: str) -> Path:
         """Write a Markdown report and return its path."""
@@ -71,6 +129,7 @@ class BaseAgent(ABC):
 | Agent | {self.role.capitalize()} |
 | Date | {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")} |
 | Model | {self.model} |
+| Web Search | {"Enabled" if self.use_search else "Disabled — set TAVILY_API_KEY to enable"} |
 
 ---
 

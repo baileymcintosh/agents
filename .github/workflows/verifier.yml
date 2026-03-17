@@ -46,6 +46,7 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_ALERTS_CHANNEL_ID: ${{ secrets.SLACK_ALERTS_CHANNEL_ID }}
           AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: |
           DRY_RUN_FLAG=""
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then

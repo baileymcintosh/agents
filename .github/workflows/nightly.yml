@@ -29,6 +29,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: |
           FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
           uv run agentorg run planner $FLAG
@@ -57,6 +58,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: |
           FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
           uv run agentorg run builder $FLAG
@@ -85,6 +87,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: |
           FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
           uv run agentorg run verifier $FLAG
@@ -115,6 +118,7 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_EXECUTIVE_CHANNEL_ID: ${{ secrets.SLACK_EXECUTIVE_CHANNEL_ID }}
           AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: |
           FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
           uv run agentorg run reporter $FLAG
