@@ -12,6 +12,12 @@ on:
         required: true
         default: "2h"
         type: string
+      model_tier:
+        description: "Model tier: sonnet = ~$1-3 per 2h session | opus = ~$7-10 per 2h session (world-class depth)"
+        required: false
+        default: "sonnet"
+        type: choice
+        options: ["sonnet", "opus"]
       dry_run:
         description: "Dry run (no Claude calls)"
         required: false
@@ -26,6 +32,11 @@ env:
   SLACK_EXECUTIVE_CHANNEL_ID: ${{ secrets.SLACK_EXECUTIVE_CHANNEL_ID }}
   TIME_BUDGET: ${{ github.event.inputs.time_budget }}
   GITHUB_REPOSITORY: ${{ github.repository }}
+  # Model tier — sonnet saves ~5x vs opus with minimal quality loss for research tasks
+  PLANNER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
+  BUILDER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
+  VERIFIER_MODEL: "claude-sonnet-4-6"
+  REPORTER_MODEL: "claude-sonnet-4-6"
 
 jobs:
   session:
@@ -68,7 +79,10 @@ jobs:
           if not token or not channel:
               print("Slack not configured, skipping")
               exit(0)
-          msg = f":rocket: *Research Session started* — budget: *{budget}*\nRunning multiple research cycles until time is up. You'll receive a full report when done."
+          tier = os.environ.get("PLANNER_MODEL", "")
+          model_label = "Opus (premium)" if "opus" in tier else "Sonnet (standard)"
+          cost_est = "~$7–10" if "opus" in tier else "~$1–3"
+          msg = f":rocket: *Research Session started* — budget: *{budget}* | model: *{model_label}* | est. cost: *{cost_est}*\nRunning multiple research cycles until time is up. You'll receive a full report when done."
           data = json.dumps({"channel": channel, "text": msg}).encode()
           req = urllib.request.Request(
               "https://slack.com/api/chat.postMessage",

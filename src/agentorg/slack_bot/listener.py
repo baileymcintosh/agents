@@ -36,8 +36,9 @@ LOOKBACK_MINUTES = 12  # check messages from the last N minutes (accounts for sc
 HELP_TEXT = """\
 :robot_face: *AgentOrg commands*
 
-• `run session 2h` — *recommended* — multi-cycle deep research for a set duration
-• `run session 20h` — overnight world-class research (runs until done or time up)
+• `run session 2h` — multi-cycle deep research, Sonnet (~$1-3)
+• `run session 2h opus` — same but Opus quality (~$7-10)
+• `run session 20h` — overnight full research (Sonnet, ~$10-15)
 • `run fast 5m` — quick brief with web search, all agents in ~5 min
 • `run all` — single full pipeline cycle (Opus, deep mode)
 • `run planner` / `run builder` / `run verifier` / `run reporter` — individual agents
@@ -171,15 +172,31 @@ class SlackListener:
             for command, (workflow, inputs) in BASE_COMMANDS.items():
                 # Support optional time budget suffix: "run fast 5m", "run all 2h"
                 if text == command or text.startswith(command + " "):
-                    # Extract optional time budget suffix: "run fast 5m", "run session 2h"
+                    # Extract optional suffix: "run session 2h opus", "run fast 5m"
                     extra = text[len(command):].strip()
                     run_inputs = dict(inputs)
                     budget_display = ""
+
                     if extra:
-                        run_inputs["time_budget"] = extra
-                        budget_display = f" (budget: {extra})"
+                        # Pull out "opus" keyword if present
+                        parts = extra.split()
+                        model_tier = None
+                        budget_parts = []
+                        for p in parts:
+                            if p in ("opus", "sonnet"):
+                                model_tier = p
+                            else:
+                                budget_parts.append(p)
+                        budget_str = " ".join(budget_parts).strip()
+                        if budget_str:
+                            run_inputs["time_budget"] = budget_str
+                        if model_tier and command == "run session":
+                            run_inputs["model_tier"] = model_tier
+                        budget_display = f" (budget: {budget_str or 'default'}"
+                        if model_tier:
+                            budget_display += f", {model_tier}"
+                        budget_display += ")"
                     elif command == "run session":
-                        # run session requires a time budget
                         self._slack_post(
                             ":x: `run session` requires a time budget. Example: `run session 2h`",
                             thread_ts=ts,
