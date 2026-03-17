@@ -14,7 +14,7 @@ app = typer.Typer(
 )
 console = Console()
 
-ROLES = ["planner", "builder", "verifier", "reporter"]
+ROLES = ["planner", "builder", "verifier", "reporter", "debugger"]
 
 
 @app.command()
