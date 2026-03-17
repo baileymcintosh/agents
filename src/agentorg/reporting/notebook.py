@@ -37,14 +37,14 @@ _CHART_TRIGGERS = {
 }
 
 
-def _png_output(png_path: Path) -> dict[str, Any]:
+def _png_output(png_path: Path) -> Any:
     """Build an nbformat display_data output with embedded PNG."""
     data = base64.b64encode(png_path.read_bytes()).decode("utf-8")
-    return {
-        "output_type": "display_data",
-        "data": {"image/png": data, "text/plain": ["<Figure>"]},
-        "metadata": {"image/png": {"width": 900}},
-    }
+    return nbformat.v4.new_output(
+        output_type="display_data",
+        data={"image/png": data, "text/plain": ["<Figure>"]},
+        metadata={"image/png": {"width": 900}},
+    )
 
 
 def _hidden_chart_cell(png_path: Path, caption: str = "") -> dict[str, Any]:
