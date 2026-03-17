@@ -25,6 +25,14 @@ BUILDER_MODEL: str = os.getenv("BUILDER_MODEL", "claude-opus-4-6")
 VERIFIER_MODEL: str = os.getenv("VERIFIER_MODEL", "claude-sonnet-4-6")
 REPORTER_MODEL: str = os.getenv("REPORTER_MODEL", "claude-sonnet-4-6")
 
+# OpenAI — used by the qual builder (qualitative/policy analyst)
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+QUAL_BUILDER_MODEL: str = os.getenv("QUAL_BUILDER_MODEL", "gpt-4o")
+QUANT_BUILDER_MODEL: str = os.getenv("QUANT_BUILDER_MODEL", "claude-opus-4-6")
+
+# Collaborative session — how many back-and-forth turns between qual and quant per cycle
+SESSION_COLLAB_TURNS: int = int(os.getenv("SESSION_COLLAB_TURNS", "3"))
+
 # Slack
 SLACK_BOT_TOKEN: str = os.getenv("SLACK_BOT_TOKEN", "")
 SLACK_SIGNING_SECRET: str = os.getenv("SLACK_SIGNING_SECRET", "")

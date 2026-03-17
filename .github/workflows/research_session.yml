@@ -1,8 +1,7 @@
 name: Research Session (Multi-Cycle)
 
-# Runs multiple plan→build→verify cycles within a time budget,
-# then delivers a final reporter summary at the end.
-# This is the workflow to use for "run for 2 hours and give me the full report."
+# Runs multiple plan → collaborative-session (qual+quant in parallel) → verify cycles
+# within a time budget, then delivers a final reporter summary at the end.
 
 on:
   workflow_dispatch:
@@ -13,13 +12,19 @@ on:
         default: "2h"
         type: string
       model_tier:
-        description: "Model tier: sonnet = ~$1-3 per 2h session | opus = ~$7-10 per 2h session (world-class depth)"
+        description: "Claude tier: sonnet = ~$1-3 per 2h | opus = ~$7-10 per 2h (world-class depth)"
         required: false
         default: "sonnet"
         type: choice
         options: ["sonnet", "opus"]
+      collab_turns:
+        description: "Cross-check turns per agent per cycle (3 = thorough, 2 = faster)"
+        required: false
+        default: "3"
+        type: choice
+        options: ["2", "3", "4", "5"]
       dry_run:
-        description: "Dry run (no Claude calls)"
+        description: "Dry run (no API calls)"
         required: false
         default: "false"
         type: choice
@@ -27,23 +32,22 @@ on:
 
 env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
   TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
-  SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-  SLACK_EXECUTIVE_CHANNEL_ID: ${{ secrets.SLACK_EXECUTIVE_CHANNEL_ID }}
+  FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
   TIME_BUDGET: ${{ github.event.inputs.time_budget }}
+  SESSION_COLLAB_TURNS: ${{ github.event.inputs.collab_turns }}
   GITHUB_REPOSITORY: ${{ github.repository }}
-  # Model tier — sonnet saves ~5x vs opus with minimal quality loss for research tasks
   PLANNER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
-  BUILDER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
+  QUANT_BUILDER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
+  QUAL_BUILDER_MODEL: "gpt-4o"
   VERIFIER_MODEL: "claude-sonnet-4-6"
   REPORTER_MODEL: "claude-sonnet-4-6"
 
 jobs:
   session:
-    name: "Research Session (${{ github.event.inputs.time_budget }})"
+    name: "Research Session (${{ github.event.inputs.time_budget }}, ${{ github.event.inputs.collab_turns }} turns)"
     runs-on: ubuntu-latest
-    # Set a hard GitHub Actions timeout slightly above the budget (convert to minutes + buffer)
-    # Default 6h covers any reasonable budget
     timeout-minutes: 360
     permissions:
       contents: write
@@ -68,30 +72,6 @@ jobs:
           git config user.name "AgentOrg Bot"
           git config user.email "agentorg-bot@users.noreply.github.com"
 
-      - name: Post session start to Slack
-        run: |
-          python - <<'PYEOF'
-          import os, json
-          import urllib.request
-          token = os.environ.get("SLACK_BOT_TOKEN", "")
-          channel = os.environ.get("SLACK_EXECUTIVE_CHANNEL_ID", "")
-          budget = os.environ.get("TIME_BUDGET", "")
-          if not token or not channel:
-              print("Slack not configured, skipping")
-              exit(0)
-          tier = os.environ.get("PLANNER_MODEL", "")
-          model_label = "Opus (premium)" if "opus" in tier else "Sonnet (standard)"
-          cost_est = "~$7–10" if "opus" in tier else "~$1–3"
-          msg = f":rocket: *Research Session started* — budget: *{budget}* | model: *{model_label}* | est. cost: *{cost_est}*\nRunning multiple research cycles until time is up. You'll receive a full report when done."
-          data = json.dumps({"channel": channel, "text": msg}).encode()
-          req = urllib.request.Request(
-              "https://slack.com/api/chat.postMessage",
-              data=data,
-              headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-          )
-          urllib.request.urlopen(req)
-          PYEOF
-
       - name: Run research session loop
         run: |
           FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
@@ -106,13 +86,14 @@ jobs:
             BUDGET_MIN=$BUDGET_STR
           fi
           BUDGET_SEC=$((BUDGET_MIN * 60))
-          # Reserve 5 min for final reporter + push
-          REPORTER_RESERVE_SEC=300
+          # Reserve 8 min for final reporter + push (reporter is heavier now)
+          REPORTER_RESERVE_SEC=480
 
           START=$(date +%s)
           CYCLE=0
 
           echo "Session budget: ${BUDGET_MIN} min (${BUDGET_SEC}s)"
+          echo "Collaborative turns per agent: ${{ github.event.inputs.collab_turns }}"
 
           while true; do
             ELAPSED=$(( $(date +%s) - START ))
@@ -120,46 +101,46 @@ jobs:
             CYCLE=$((CYCLE + 1))
 
             echo ""
-            echo "=== CYCLE ${CYCLE} | Elapsed: $((ELAPSED/60))m | Remaining (excl. reporter reserve): $((REMAINING/60))m ==="
+            echo "=== CYCLE ${CYCLE} | Elapsed: $((ELAPSED/60))m | Remaining: $((REMAINING/60))m ==="
 
-            # Stop if less than 4 minutes left for a research cycle
-            if [ $REMAINING -lt 240 ]; then
+            if [ $REMAINING -lt 300 ]; then
               echo "Not enough time for another full cycle — moving to final report."
               break
             fi
 
-            # Run planner
+            # 1. Planner sets the research agenda
             echo "--- Planner ---"
-            uv run agentorg run planner $FLAG || echo "Planner encountered an error but continuing"
+            uv run agentorg run planner $FLAG || echo "Planner error — continuing"
 
             # Check if planner marked project complete
             LATEST_PLAN=$(ls -t reports/*_planner_*.md 2>/dev/null | head -1)
-            if [ -n "$LATEST_PLAN" ] && grep -q "PROJECT STATUS: COMPLETE\|ALL SECTIONS COMPLETE\|project is complete" "$LATEST_PLAN" 2>/dev/null; then
+            if [ -n "$LATEST_PLAN" ] && grep -q "PROJECT STATUS: COMPLETE\|ALL SECTIONS COMPLETE" "$LATEST_PLAN" 2>/dev/null; then
               echo "Planner marked project complete — moving to final report."
               break
             fi
 
-            # Run builder
-            echo "--- Builder ---"
-            uv run agentorg run builder $FLAG || echo "Builder encountered an error but continuing"
+            # 2. Collaborative session: qual (OpenAI) + quant (Claude) run in parallel
+            echo "--- Collaborative Session (qual + quant, ${{ github.event.inputs.collab_turns }} turns each) ---"
+            uv run agentorg session --time-budget "${BUDGET_STR}" $FLAG || echo "Session error — continuing"
 
-            # Run verifier
+            # 3. Verifier checks both outputs
             echo "--- Verifier ---"
-            uv run agentorg run verifier $FLAG || echo "Verifier encountered an error but continuing"
+            uv run agentorg run verifier $FLAG || echo "Verifier error — continuing"
 
-            # Push this cycle's reports
+            # Push this cycle
             git add reports/
             git diff --staged --quiet || git commit -m "session: cycle ${CYCLE} complete $(date -u +%Y-%m-%dT%H:%M)"
             git pull --rebase origin main
             git push
 
-            # Brief pause between cycles
             sleep 5
           done
 
+          # Final reporter is already run inside `agentorg session` — but run standalone
+          # here too in case the session ran planner-only and there's no session report yet.
           echo ""
           echo "=== FINAL REPORTER ==="
-          uv run agentorg run reporter $FLAG || echo "Reporter encountered an error"
+          uv run agentorg run reporter $FLAG || echo "Reporter error"
 
       - name: Push final reports
         run: |
@@ -168,7 +149,6 @@ jobs:
           git pull --rebase origin main
           git push
 
-  # Debugger fires if the session job crashes completely
   debug:
     name: "🔧 Debugger"
     needs: [session]

@@ -14,7 +14,7 @@ app = typer.Typer(
 )
 console = Console()
 
-ROLES = ["planner", "builder", "verifier", "reporter", "debugger"]
+ROLES = ["planner", "builder", "verifier", "reporter", "debugger", "qual_builder", "quant_builder"]
 
 
 @app.command()
@@ -90,6 +90,35 @@ def export(
     gen = ReportGenerator(output_dir=out)
     gen.export(format=format)
     console.print(f"[green]Export complete → {out}[/green]")
+
+
+@app.command()
+def session(
+    time_budget: str = typer.Option("", "--time-budget", "-t", help="Time budget e.g. 2h, 30m"),
+    turns: int = typer.Option(0, "--turns", help="Turns per agent (0 = use config default)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Skip agent calls"),
+) -> None:
+    """
+    Run a collaborative research session: qual (OpenAI) + quant (Claude) in parallel,
+    cross-checking each other's findings, then synthesised by the reporter.
+
+    Requires the planner to have already run (reads latest planner report).
+    """
+    from agentorg.agents.session import run_collaborative_session
+
+    console.print("[bold green]Starting collaborative session[/bold green]")
+    if time_budget:
+        console.print(f"[cyan]Time budget:[/cyan] {time_budget}")
+    if dry_run:
+        console.print("[yellow]Dry-run mode[/yellow]")
+
+    result = run_collaborative_session(
+        time_budget=time_budget,
+        turns_per_agent=turns or None,
+        dry_run=dry_run,
+    )
+    console.print(f"[green]Session complete[/green] — {result.get('messages', 0)} cross-agent messages, "
+                  f"{len(result.get('charts', []))} charts")
 
 
 if __name__ == "__main__":

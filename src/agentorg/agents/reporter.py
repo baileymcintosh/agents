@@ -25,16 +25,26 @@ class ReporterAgent(BaseAgent):
 
     def _gather_recent_reports(self) -> str:
         sections = []
-        builder_files = sorted(
-            config.REPORTS_DIR.glob("*_builder_*.md"),
-            key=lambda f: f.stat().st_mtime,
-        )
-        for f in builder_files:
-            content = f.read_text(encoding="utf-8")
-            if "_Dry-run mode_" in content or "Dry-run mode" in content:
-                continue
-            sections.append(f"## Builder Report — {f.stem}\n\n{content}")
 
+        def _add_glob(pattern: str, label: str) -> None:
+            for f in sorted(config.REPORTS_DIR.glob(pattern), key=lambda f: f.stat().st_mtime):
+                content = f.read_text(encoding="utf-8")
+                if "_Dry-run mode_" in content or "Dry-run mode" in content:
+                    continue
+                sections.append(f"## {label} — {f.stem}\n\n{content}")
+
+        # Legacy builder reports (old workflow)
+        _add_glob("*_builder_*.md", "Builder Report")
+
+        # New collaborative session reports
+        _add_glob("*_qual_builder_*.md", "Qualitative Research")
+        _add_glob("*_quant_builder_*.md", "Quantitative Research")
+
+        # Cross-agent dialogue log (key context for synthesis)
+        for f in sorted(config.REPORTS_DIR.glob("*_session_dialogue.md"), key=lambda f: f.stat().st_mtime):
+            sections.append(f"## Cross-Agent Research Dialogue\n\n{f.read_text(encoding='utf-8')}")
+
+        # Latest planner and verifier
         for agent_role in ("planner", "verifier"):
             files = sorted(
                 config.REPORTS_DIR.glob(f"*_{agent_role}_*.md"),
@@ -201,8 +211,12 @@ class ReporterAgent(BaseAgent):
         context = self._gather_recent_reports()
 
         summary_prompt = (
-            "You are the reporter agent. Based on ALL builder reports below (multiple research cycles), "
-            "write a comprehensive, publication-quality executive summary.\n\n"
+            "You are the reporter — the senior editor who synthesises work from a two-person research team:\n"
+            "- **Qualitative researcher (OpenAI GPT-4o):** news, speeches, policy analysis, geopolitical context\n"
+            "- **Quantitative researcher (Claude):** live market data, annotated charts, statistical analysis\n\n"
+            "Your job: weave both threads into a single coherent, publication-quality executive summary "
+            "that is strong both quantitatively AND qualitatively. Where the quant identified data anomalies "
+            "and the qual explained them, make that cross-verification explicit — it's the most valuable part.\n\n"
             "Use these exact section headings:\n"
             "# [Project Title]\n"
             "## One-Line Status\n"
@@ -213,8 +227,12 @@ class ReporterAgent(BaseAgent):
             "## Historical Precedents & Lessons\n"
             "## Quality Assessment\n"
             "## Recommended Next Steps\n\n"
-            "Be comprehensive — synthesize ALL cycles. Use specific facts, dates, figures, named sources. "
-            "This is the final deliverable for senior leadership.\n\n"
+            "Rules:\n"
+            "- Cite specific data points from the quant research (exact prices, % changes, dates)\n"
+            "- Cite named sources from the qual research (publications, officials, think tanks)\n"
+            "- Where a chart was generated, reference it: 'As shown in the oil price chart above...'\n"
+            "- Include the cross-agent dialogue insights: moments where quant spotted something and qual explained it\n"
+            "- This is the final deliverable for senior leadership making real financial decisions\n\n"
             f"{context}"
         )
 
@@ -261,11 +279,14 @@ class ReporterAgent(BaseAgent):
             for key, p in chart_paths.items():
                 out.append(f"\n---\n\n## {key.replace('_', ' ').title()}\n\n![{p.stem}]({p})\n")
             md_with_charts = "\n".join(out)
-            # Rebuild chart_paths (we popped from it above — re-collect from disk)
-            chart_paths = {
-                p.stem.split("chart_")[1]: p
-                for p in config.REPORTS_DIR.glob("chart_*.png")
-            }
+            # Rebuild chart_paths — collect ALL pngs from disk (includes quant-generated charts)
+            all_pngs = sorted(config.REPORTS_DIR.glob("chart_*.png"), key=lambda p: p.stat().st_mtime)
+            chart_paths = {}
+            for p in all_pngs:
+                stem = p.stem
+                # Key: strip leading "chart_" prefix; use full stem for quant charts
+                key = stem.removeprefix("chart_")
+                chart_paths[key] = p
 
         report_path = self.write_report("Executive Summary", md_with_charts)
 
