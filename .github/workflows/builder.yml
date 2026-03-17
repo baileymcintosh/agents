@@ -65,4 +65,5 @@ jobs:
           git config user.email "agentorg-bot@users.noreply.github.com"
           git add reports/
           git diff --staged --quiet || git commit -m "chore: builder report $(date -u +%Y-%m-%d)"
+          git pull --rebase origin main
           git push

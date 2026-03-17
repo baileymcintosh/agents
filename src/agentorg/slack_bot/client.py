@@ -87,6 +87,29 @@ class SlackClient:
             logger.error(f"[slack] Failed to upload file: {e.response['error']}")
             raise
 
+    def post_progress(
+        self,
+        channel: str,
+        emoji: str,
+        agent: str,
+        status: str,
+        detail: str = "",
+    ) -> None:
+        """
+        Post a brief progress update as an agent starts or finishes.
+
+        Example:
+            slack.post_progress("executive", "🔍", "Planner", "started", "Scanning research priorities...")
+            slack.post_progress("executive", "✅", "Planner", "done", "Identified 5 tasks. Top: Iran military situation.")
+        """
+        text = f"{emoji} *{agent}* {status}"
+        if detail:
+            text += f"\n>{detail}"
+        try:
+            self.post_message(channel=channel, text=text)
+        except Exception as e:
+            logger.warning(f"[slack] Progress update failed (non-fatal): {e}")
+
     def post_report_summary(
         self,
         channel: str,

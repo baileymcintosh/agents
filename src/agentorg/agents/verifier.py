@@ -11,9 +11,6 @@ from agentorg.agents.base import BaseAgent
 from agentorg import config
 
 
-
-
-
 class VerifierAgent(BaseAgent):
     role = "verifier"
 
@@ -35,17 +32,17 @@ class VerifierAgent(BaseAgent):
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("[verifier] Starting verification cycle.")
+        self.post_slack_progress("🔎", "starting", "Reviewing research output for quality and accuracy...")
+
         build_output = self._load_latest_build()
 
         prompt = (
-            "You are the verifier agent. Review the following build output critically. "
-            "Check for: logical errors, missing steps, unsubstantiated claims, gaps, "
-            "and quality issues. Write a structured QA report with:\n"
-            "- Overall verdict: PASS / NEEDS REVISION / FAIL\n"
-            "- Specific findings (numbered list)\n"
-            "- Recommended fixes\n"
-            "- Confidence score (0–100)\n\n"
-            f"## Build Output to Review\n\n{build_output}"
+            "You are the verifier agent. Critically review the research output below. "
+            "Check for: unsupported claims, logical errors, missing evidence, shallow analysis, "
+            "and anything that would undermine confidence in the findings. "
+            "Issue a verdict (PASS / NEEDS REVISION / FAIL), a confidence score (0–100), "
+            "and specific actionable findings.\n\n"
+            f"## Research Output to Review\n\n{build_output}"
         )
 
         if dry_run:
@@ -54,6 +51,15 @@ class VerifierAgent(BaseAgent):
             report_content = self.call_claude(prompt)
 
         report_path = self.write_report("Verification Report", report_content)
+
+        # Extract verdict for Slack
+        verdict = "Review complete."
+        for line in report_content.split("\n"):
+            if any(word in line for word in ["PASS", "FAIL", "NEEDS REVISION", "confidence", "Confidence"]):
+                verdict = line.strip().lstrip("#").strip()[:200]
+                break
+        self.post_slack_progress("✅", "done", verdict)
+
         return {"status": "ok", "report": str(report_path)}
 
 

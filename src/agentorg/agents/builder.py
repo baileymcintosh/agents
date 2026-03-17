@@ -1,4 +1,4 @@
-"""Builder agent — executes tasks from the planner and produces outputs."""
+"""Builder agent — executes research tasks from the planner and produces outputs."""
 
 from __future__ import annotations
 
@@ -11,9 +11,6 @@ from agentorg.agents.base import BaseAgent
 from agentorg import config
 
 
-
-
-
 class BuilderAgent(BaseAgent):
     role = "builder"
 
@@ -22,7 +19,6 @@ class BuilderAgent(BaseAgent):
         self.model = config.BUILDER_MODEL
 
     def _load_latest_plan(self) -> str:
-        """Read the most recent planner report to understand current tasks."""
         plans = sorted(
             config.REPORTS_DIR.glob("*_planner_*.md"),
             key=lambda f: f.stat().st_mtime,
@@ -36,14 +32,22 @@ class BuilderAgent(BaseAgent):
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("[builder] Starting build cycle.")
+        self.post_slack_progress("⚙️", "starting", "Reading the research plan and beginning deep analysis...")
+
         plan = self._load_latest_plan()
 
+        project_brief = ""
+        project_path = config.ROOT_DIR / "PROJECT.md"
+        if project_path.exists():
+            project_brief = project_path.read_text(encoding="utf-8")
+
         prompt = (
-            "You are the builder agent. Below is the current research plan. "
-            "Execute the highest-priority task. Show your work step by step. "
-            "Produce a detailed output report including: what you did, what you found, "
-            "any code or data produced, and next steps.\n\n"
-            f"## Current Plan\n\n{plan}"
+            "You are the builder agent. Below is the research plan for this cycle and the project brief. "
+            "Execute the assigned research section with maximum depth and rigor. "
+            "Search the web extensively for current information — use multiple targeted queries. "
+            "Produce a detailed, specific research section with evidence, citations, and analysis.\n\n"
+            f"## Project Brief\n\n{project_brief}\n\n"
+            f"## Research Plan\n\n{plan}"
         )
 
         if dry_run:
@@ -51,7 +55,14 @@ class BuilderAgent(BaseAgent):
         else:
             report_content = self.call_claude(prompt)
 
-        report_path = self.write_report("Build Output", report_content)
+        report_path = self.write_report("Research Section", report_content)
+
+        first_line = next(
+            (line.strip() for line in report_content.split("\n") if line.strip() and not line.startswith("#")),
+            "Research section complete."
+        )[:200]
+        self.post_slack_progress("✅", "done", f"Section complete. {first_line}")
+
         return {"status": "ok", "report": str(report_path)}
 
 

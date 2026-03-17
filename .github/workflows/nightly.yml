@@ -1,7 +1,6 @@
 name: Nightly Full Pipeline
 
 on:
-  # Run every night at 2 AM UTC
   schedule:
     - cron: "0 2 * * *"
   workflow_dispatch:
@@ -12,6 +11,13 @@ on:
         default: "false"
         type: choice
         options: ["true", "false"]
+
+# Shared env vars available to all jobs
+env:
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+  SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+  SLACK_EXECUTIVE_CHANNEL_ID: ${{ secrets.SLACK_EXECUTIVE_CHANNEL_ID }}
 
 jobs:
   # ── Step 1: Plan ───────────────────────────────────────────────────────────
@@ -26,10 +32,6 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync
       - name: Run Planner
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
-          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: |
           FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
           uv run agentorg run planner $FLAG
@@ -39,6 +41,7 @@ jobs:
           git config user.email "agentorg-bot@users.noreply.github.com"
           git add reports/
           git diff --staged --quiet || git commit -m "nightly: planner $(date -u +%Y-%m-%dT%H:%M)"
+          git pull --rebase origin main
           git push
 
   # ── Step 2: Build ──────────────────────────────────────────────────────────
@@ -55,10 +58,6 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync
       - name: Run Builder
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
-          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: |
           FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
           uv run agentorg run builder $FLAG
@@ -68,6 +67,7 @@ jobs:
           git config user.email "agentorg-bot@users.noreply.github.com"
           git add reports/
           git diff --staged --quiet || git commit -m "nightly: builder $(date -u +%Y-%m-%dT%H:%M)"
+          git pull --rebase origin main
           git push
 
   # ── Step 3: Verify ─────────────────────────────────────────────────────────
@@ -84,10 +84,6 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync
       - name: Run Verifier
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
-          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: |
           FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
           uv run agentorg run verifier $FLAG
@@ -97,6 +93,7 @@ jobs:
           git config user.email "agentorg-bot@users.noreply.github.com"
           git add reports/
           git diff --staged --quiet || git commit -m "nightly: verifier $(date -u +%Y-%m-%dT%H:%M)"
+          git pull --rebase origin main
           git push
 
   # ── Step 4: Report → Executive + Slack ────────────────────────────────────
@@ -122,12 +119,6 @@ jobs:
             texlive-fonts-recommended \
             fonts-dejavu
       - name: Run Reporter
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_EXECUTIVE_CHANNEL_ID: ${{ secrets.SLACK_EXECUTIVE_CHANNEL_ID }}
-          AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
-          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: |
           FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
           uv run agentorg run reporter $FLAG
@@ -137,4 +128,5 @@ jobs:
           git config user.email "agentorg-bot@users.noreply.github.com"
           git add reports/
           git diff --staged --quiet || git commit -m "nightly: executive summary $(date -u +%Y-%m-%dT%H:%M)"
+          git pull --rebase origin main
           git push

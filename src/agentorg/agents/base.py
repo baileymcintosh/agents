@@ -152,6 +152,23 @@ class BaseAgent(ABC):
         logger.info(f"[{self.role}] Report → {report_path.name}")
         return report_path
 
+    def post_slack_progress(self, emoji: str, status: str, detail: str = "") -> None:
+        """Post a progress update to Slack if configured. Never crashes."""
+        if not config.SLACK_BOT_TOKEN or not config.SLACK_EXECUTIVE_CHANNEL_ID:
+            return
+        try:
+            from agentorg.slack_bot.client import SlackClient
+            slack = SlackClient()
+            slack.post_progress(
+                channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
+                emoji=emoji,
+                agent=self.role.capitalize(),
+                status=status,
+                detail=detail,
+            )
+        except Exception as e:
+            logger.warning(f"[{self.role}] Slack progress update failed (non-fatal): {e}")
+
     @abstractmethod
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         """Execute the agent's primary task. Returns a result summary dict."""
