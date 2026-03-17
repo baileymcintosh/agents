@@ -61,14 +61,17 @@ class BaseAgent(ABC):
         content = f"{extra_context}\n\n{user_message}" if extra_context else user_message
         messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
 
-        # Fast mode: skip web search entirely so each agent completes in ~20-30s
-        search_enabled = self.use_search and not config.FAST_MODE
-        tools = [SEARCH_TOOL_DEFINITION] if search_enabled else []
+        tools = [SEARCH_TOOL_DEFINITION] if self.use_search else []
+        # Fast mode: cap searches at 2 per agent (3 results each) to stay under ~60s per agent
+        max_searches = 2 if config.FAST_MODE else 999
+        fast_max_results = 3
+        search_count = 0
 
-        if search_enabled:
-            logger.info(f"[{self.role}] → Claude ({self.model}) with web search enabled")
-        elif config.FAST_MODE:
-            logger.info(f"[{self.role}] → Claude ({self.model}) — fast mode, web search disabled")
+        if self.use_search:
+            if config.FAST_MODE:
+                logger.info(f"[{self.role}] → Claude ({self.model}) — fast mode, web search capped at {max_searches}")
+            else:
+                logger.info(f"[{self.role}] → Claude ({self.model}) with web search enabled")
         else:
             logger.info(f"[{self.role}] → Claude ({self.model}) — no web search (TAVILY_API_KEY not set)")
 
@@ -115,11 +118,17 @@ class BaseAgent(ABC):
                         tool_input = block.input
 
                         if tool_name == "web_search":
-                            query = tool_input.get("query", "")
-                            max_results = tool_input.get("max_results", 8)
-                            logger.info(f"[{self.role}] Web search: '{query}'")
-                            results = web_search(query, max_results=max_results)
-                            result_text = format_search_results(results)
+                            if search_count >= max_searches:
+                                # Search cap reached — tell Claude to wrap up with what it has
+                                logger.info(f"[{self.role}] Search cap reached ({max_searches}) — stopping search loop")
+                                result_text = "Search limit reached. Write your response now using what you already know."
+                            else:
+                                query = tool_input.get("query", "")
+                                n_results = fast_max_results if config.FAST_MODE else tool_input.get("max_results", 8)
+                                logger.info(f"[{self.role}] Web search ({search_count + 1}/{max_searches}): '{query}'")
+                                results = web_search(query, max_results=n_results)
+                                result_text = format_search_results(results)
+                                search_count += 1
                         else:
                             result_text = f"Unknown tool: {tool_name}"
 
