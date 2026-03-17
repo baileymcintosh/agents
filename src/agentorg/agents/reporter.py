@@ -81,27 +81,50 @@ class ReporterAgent(BaseAgent):
         # Write the full Markdown report
         report_path = self.write_report("Executive Summary", summary)
 
-        # Export to LaTeX PDF
-        pdf_path: Path | None = None
-        if not dry_run and config.PDF_EXPORT_ENABLED:
-            from agentorg.reporting.generator import ReportGenerator
-            gen = ReportGenerator()
-            pdf_path = gen.export_to_pdf(report_path)
-            if pdf_path:
-                logger.info(f"[reporter] PDF ready: {pdf_path.name}")
+        # Generate charts from embedded chart_data blocks
+        chart_paths: list[Path] = []
+        if not dry_run:
+            try:
+                from agentorg.reporting.charts import generate_all_charts
+                chart_paths = generate_all_charts(summary, config.REPORTS_DIR)
+            except Exception as e:
+                logger.warning(f"[reporter] Chart generation failed (non-fatal): {e}")
 
-        # Post to Slack — brief message + PDF attachment
+        # Export to LaTeX PDF (skip in fast mode)
+        pdf_path: Path | None = None
+        if not dry_run and config.PDF_EXPORT_ENABLED and not config.FAST_MODE:
+            try:
+                from agentorg.reporting.generator import ReportGenerator
+                gen = ReportGenerator()
+                pdf_path = gen.export_to_pdf(report_path)
+                if pdf_path:
+                    logger.info(f"[reporter] PDF ready: {pdf_path.name}")
+            except Exception as e:
+                logger.warning(f"[reporter] PDF export failed (non-fatal): {e}")
+
+        # Post to Slack — brief message + charts + PDF attachment
         if config.SLACK_BOT_TOKEN and config.SLACK_EXECUTIVE_CHANNEL_ID and not dry_run:
             try:
                 from agentorg.slack_bot.client import SlackClient
                 slack = SlackClient()
 
-                # Post the short brief as a message
                 cycle_date = report_path.stem.split("_")[0]  # YYYYMMDD
                 slack.post_message(
                     channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
                     text=f"*Research Report — {cycle_date}*\n\n{brief}",
                 )
+
+                # Upload any generated charts
+                for i, chart_path in enumerate(chart_paths):
+                    try:
+                        slack.upload_file(
+                            channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
+                            file_path=str(chart_path),
+                            title=chart_path.stem.replace("_", " ").title(),
+                            initial_comment="" if i > 0 else "Charts from this cycle:",
+                        )
+                    except Exception as e:
+                        logger.warning(f"[reporter] Chart upload failed (non-fatal): {e}")
 
                 # Upload the PDF (preferred) or fall back to Markdown
                 file_to_upload = str(pdf_path) if pdf_path else str(report_path)
@@ -112,7 +135,7 @@ class ReporterAgent(BaseAgent):
                     title=file_title,
                     initial_comment="Full report attached.",
                 )
-                logger.info("[reporter] Slack post + file upload complete.")
+                logger.info("[reporter] Slack post + charts + file upload complete.")
             except Exception as e:
                 logger.error(f"[reporter] Slack error (non-fatal): {e}")
 

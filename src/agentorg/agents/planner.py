@@ -15,7 +15,8 @@ class PlannerAgent(BaseAgent):
 
     def __init__(self) -> None:
         super().__init__()
-        self.model = config.PLANNER_MODEL
+        if not config.FAST_MODE:
+            self.model = config.PLANNER_MODEL
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("[planner] Starting planning cycle.")

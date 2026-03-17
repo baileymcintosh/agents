@@ -30,8 +30,13 @@ class BaseAgent(ABC):
 
     def __init__(self) -> None:
         self.client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-        self.model = config.AGENT_MODEL
-        self.max_tokens = config.AGENT_MAX_TOKENS
+        # Fast mode overrides per-role model with Sonnet and caps tokens
+        if config.FAST_MODE:
+            self.model = config.REPORTER_MODEL  # Sonnet
+            self.max_tokens = config.FAST_MAX_TOKENS
+        else:
+            self.model = config.AGENT_MODEL
+            self.max_tokens = config.AGENT_MAX_TOKENS
         self.reports_dir = config.REPORTS_DIR
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self.system_prompt = self._load_system_prompt()

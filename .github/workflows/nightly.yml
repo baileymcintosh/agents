@@ -11,6 +11,12 @@ on:
         default: "false"
         type: choice
         options: ["true", "false"]
+      fast_mode:
+        description: "Fast mode — Sonnet for all agents, short output, single job, no PDF (~5 min)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
 
 # Shared env vars available to all jobs
 env:
@@ -18,11 +24,42 @@ env:
   TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
   SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
   SLACK_EXECUTIVE_CHANNEL_ID: ${{ secrets.SLACK_EXECUTIVE_CHANNEL_ID }}
+  FAST_MODE: ${{ github.event.inputs.fast_mode || 'false' }}
+  GITHUB_REPOSITORY: ${{ github.repository }}
 
 jobs:
+  # ── Fast mode: all four agents in ONE job (~5 min) ─────────────────────────
+  fast:
+    name: "⚡ Fast Pipeline (all agents)"
+    if: ${{ github.event.inputs.fast_mode == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.11
+      - run: uv sync
+      - name: Run all agents (fast mode)
+        run: |
+          FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
+          uv run agentorg run planner $FLAG
+          uv run agentorg run builder $FLAG
+          uv run agentorg run verifier $FLAG
+          uv run agentorg run reporter $FLAG
+      - name: Push reports
+        run: |
+          git config user.name "AgentOrg Bot"
+          git config user.email "agentorg-bot@users.noreply.github.com"
+          git add reports/
+          git diff --staged --quiet || git commit -m "fast: full pipeline $(date -u +%Y-%m-%dT%H:%M)"
+          git pull --rebase origin main
+          git push
+
   # ── Step 1: Plan ───────────────────────────────────────────────────────────
   plan:
     name: "1 — Planner"
+    if: ${{ github.event.inputs.fast_mode != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -47,6 +84,7 @@ jobs:
   # ── Step 2: Build ──────────────────────────────────────────────────────────
   build:
     name: "2 — Builder"
+    if: ${{ github.event.inputs.fast_mode != 'true' }}
     needs: plan
     runs-on: ubuntu-latest
     permissions:
@@ -73,6 +111,7 @@ jobs:
   # ── Step 3: Verify ─────────────────────────────────────────────────────────
   verify:
     name: "3 — Verifier"
+    if: ${{ github.event.inputs.fast_mode != 'true' }}
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -99,6 +138,7 @@ jobs:
   # ── Step 4: Report → Executive + Slack ────────────────────────────────────
   report:
     name: "4 — Executive Report + Slack"
+    if: ${{ github.event.inputs.fast_mode != 'true' }}
     needs: verify
     runs-on: ubuntu-latest
     permissions:
@@ -134,7 +174,7 @@ jobs:
   # ── Debugger: only runs when any job above fails ───────────────────────────
   debug:
     name: "🔧 Debugger"
-    needs: [plan, build, verify, report]
+    needs: [fast, plan, build, verify, report]
     if: failure()
     runs-on: ubuntu-latest
     permissions:

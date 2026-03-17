@@ -16,7 +16,8 @@ class BuilderAgent(BaseAgent):
 
     def __init__(self) -> None:
         super().__init__()
-        self.model = config.BUILDER_MODEL
+        if not config.FAST_MODE:
+            self.model = config.BUILDER_MODEL
 
     def _load_latest_plan(self) -> str:
         plans = sorted(
@@ -41,10 +42,27 @@ class BuilderAgent(BaseAgent):
         if project_path.exists():
             project_brief = project_path.read_text(encoding="utf-8")
 
-        prompt = (
+        depth_instruction = (
             "You are the builder agent. Execute the assigned research section with maximum depth. "
             "Use web search extensively — run multiple targeted queries to find the most current information. "
             "Produce specific, evidence-backed analysis with named sources, dates, and figures.\n\n"
+            "REQUIRED: At the end of your report, embed a ```chart_data JSON block with any applicable data:\n"
+            "- 'scenarios': list of {name, probability, color} for scenario charts\n"
+            "- 'market_impacts': list of {name, low, high, direction} for market impact ranges\n"
+            "- 'timeline': list of {date, label, severity} for event timelines\n"
+            "- Include optional title keys: 'scenario_title', 'market_title', 'timeline_title'\n\n"
+            "Example:\n"
+            "```chart_data\n"
+            '{"scenarios": [{"name": "Containment", "probability": 40, "color": "#27ae60"}], '
+            '"scenario_title": "Iran-Israel Scenario Probabilities"}\n'
+            "```\n\n"
+        ) if not config.FAST_MODE else (
+            "You are the builder agent. Produce a concise, direct research brief. "
+            "Use web search for the most current facts. Be specific with dates and numbers.\n\n"
+        )
+
+        prompt = (
+            f"{depth_instruction}"
             f"## Project Brief\n\n{project_brief}\n\n"
             f"## Research Plan\n\n{plan}"
         )
