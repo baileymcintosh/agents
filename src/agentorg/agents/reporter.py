@@ -55,19 +55,27 @@ class ReporterAgent(BaseAgent):
 
         report_path = self.write_report("Executive Summary", summary)
 
-        # Post to Slack if configured
+        # Post to Slack if configured — errors are logged but never crash the pipeline
         if config.SLACK_BOT_TOKEN and config.SLACK_EXECUTIVE_CHANNEL_ID and not dry_run:
-            from agentorg.slack_bot.client import SlackClient
-            slack = SlackClient()
-            slack.post_message(
-                channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
-                text=f"*Executive Summary — {report_path.stem}*\n\n{summary[:2900]}",
-            )
-            slack.upload_file(
-                channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
-                file_path=str(report_path),
-                title=report_path.stem,
-            )
+            try:
+                from agentorg.slack_bot.client import SlackClient
+                from slack_sdk.errors import SlackApiError
+                slack = SlackClient()
+                slack.post_message(
+                    channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
+                    text=f"*Executive Summary — {report_path.stem}*\n\n{summary[:2900]}",
+                )
+                slack.upload_file(
+                    channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
+                    file_path=str(report_path),
+                    title=report_path.stem,
+                )
+                logger.info("[reporter] Slack post successful.")
+            except Exception as e:
+                logger.error(
+                    f"[reporter] Slack post failed: {e}\n"
+                    "Fix: invite the AgentOrg bot to the channel with /invite @AgentOrg"
+                )
 
         return {"status": "ok", "report": str(report_path)}
 
