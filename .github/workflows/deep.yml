@@ -58,7 +58,7 @@ jobs:
 
       - name: Clone project repo
         run: |
-          gh repo clone "baileymcintosh/${{ github.event.inputs.project_name }}" /tmp/project
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/baileymcintosh/${{ github.event.inputs.project_name }}.git" /tmp/project
           cd /tmp/project
           git config user.name "AgentOrg Bot"
           git config user.email "agentorg-bot@users.noreply.github.com"
