@@ -248,3 +248,19 @@ class QualBuilderAgent:
         report_path.write_text(header + body, encoding="utf-8")
         logger.info(f"[qual] Consolidated report → {report_path.name}")
         return report_path
+
+
+    def run(self, dry_run: bool = False) -> dict:
+        """Run a single research turn — used by CLI."""
+        if dry_run:
+            return {"status": "dry_run"}
+        brief_path = config.REPORTS_DIR.parent / "BRIEF.md"
+        if not brief_path.exists():
+            brief_path = config.ROOT_DIR / "BRIEF.md"
+        brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else "Research the assigned topic thoroughly."
+        report = self.run_turn(brief)
+        return {"status": "ok", "report": str(report)}
+
+    def run_with_recovery(self, dry_run: bool = False) -> dict:
+        """Compatibility shim — calls run()."""
+        return self.run(dry_run=dry_run)
