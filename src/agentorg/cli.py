@@ -42,7 +42,9 @@ def run(
     if role == "debugger":
         module.main(dry_run=dry_run)
     else:
-        agent_class = getattr(module, f"{role.capitalize()}Agent")
+        # Convert snake_case to PascalCase: qual_builder → QualBuilderAgent
+        class_name = "".join(word.capitalize() for word in role.split("_")) + "Agent"
+        agent_class = getattr(module, class_name)
         agent = agent_class()
         agent.run_with_recovery(dry_run=dry_run)
 
