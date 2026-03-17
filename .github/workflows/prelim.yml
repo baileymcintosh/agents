@@ -47,26 +47,12 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync
 
-      - name: Create or clone project repo
+      - name: Clone project repo
         run: |
-          PROJECT="${{ github.event.inputs.project_name }}"
-          REPO="baileymcintosh/${PROJECT}"
-
-          # Create repo if it doesn't exist
-          if ! gh repo view "$REPO" > /dev/null 2>&1; then
-            gh repo create "$REPO" --public \
-              --description "${{ github.event.inputs.brief }}" \
-              --add-readme
-            echo "created=true" >> $GITHUB_ENV
-          fi
-
-          # Clone it
-          gh repo clone "$REPO" /tmp/project
+          gh repo clone "baileymcintosh/${{ github.event.inputs.project_name }}" /tmp/project
           cd /tmp/project
-
           git config user.name "AgentOrg Bot"
           git config user.email "agentorg-bot@users.noreply.github.com"
-
           mkdir -p reports notebooks data
           echo "${{ github.event.inputs.brief }}" > BRIEF.md
           git add . && git diff --staged --quiet || git commit -m "init: project setup"
