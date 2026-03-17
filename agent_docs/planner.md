@@ -44,3 +44,13 @@ A structured Markdown report titled **"Research Plan — [Cycle N]"** containing
 - The final deliverable must meet the quality standard in PROJECT.md.
 - Sequence tasks logically — foundational analysis before scenario modeling, scenarios before market impact.
 - Be honest about what the agents can and cannot know given knowledge cutoffs.
+
+## Completion Signal
+
+When ALL sections of the project brief are complete to the required quality standard, end your report with this exact line (nothing after it):
+
+```
+## PROJECT STATUS: COMPLETE
+```
+
+Only write this when you are genuinely confident that every section in PROJECT.md has been covered to the required depth. If in doubt, assign another cycle. The reporter will handle final synthesis and delivery.

@@ -36,17 +36,19 @@ LOOKBACK_MINUTES = 12  # check messages from the last N minutes (accounts for sc
 HELP_TEXT = """\
 :robot_face: *AgentOrg commands*
 
-• `run all` — full research pipeline (Opus, deep mode)
-• `run fast` — full pipeline, fast mode (~5 min, Sonnet)
+• `run session 2h` — *recommended* — multi-cycle deep research for a set duration
+• `run session 20h` — overnight world-class research (runs until done or time up)
+• `run fast 5m` — quick brief with web search, all agents in ~5 min
+• `run all` — single full pipeline cycle (Opus, deep mode)
 • `run planner` / `run builder` / `run verifier` / `run reporter` — individual agents
-• Add a time budget to any run command: `run fast 5m`, `run all 2h`, `run all 20h`
 • `status` — show recent reports
 • `help` — show this message
 
-*Time budget examples:* `5m` = 5 minutes, `2h` = 2 hours, `20h` = 20 hours
+*Time budget examples:* `5m` = 5 min · `30m` = 30 min · `2h` = 2 hours · `20h` = 20 hours
 """
 
 BASE_COMMANDS = {
+    "run session": ("research_session.yml", {}),   # multi-cycle — time_budget appended from message
     "run all": ("nightly.yml", {}),
     "run fast": ("nightly.yml", {"fast_mode": "true"}),
     "run planner": ("run_agent.yml", {"agent": "planner"}),
@@ -169,13 +171,20 @@ class SlackListener:
             for command, (workflow, inputs) in BASE_COMMANDS.items():
                 # Support optional time budget suffix: "run fast 5m", "run all 2h"
                 if text == command or text.startswith(command + " "):
-                    # Extract optional time budget from end of message
+                    # Extract optional time budget suffix: "run fast 5m", "run session 2h"
                     extra = text[len(command):].strip()
                     run_inputs = dict(inputs)
                     budget_display = ""
                     if extra:
                         run_inputs["time_budget"] = extra
                         budget_display = f" (budget: {extra})"
+                    elif command == "run session":
+                        # run session requires a time budget
+                        self._slack_post(
+                            ":x: `run session` requires a time budget. Example: `run session 2h`",
+                            thread_ts=ts,
+                        )
+                        break
 
                     self._slack_post(
                         f":hourglass_flowing_sand: Got it — triggering `{command}`{budget_display}...",
