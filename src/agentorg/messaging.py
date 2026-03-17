@@ -47,9 +47,12 @@ class AgentMessenger:
     Messages are also persisted to disk so the session log is readable.
     """
 
-    def __init__(self, session_dir: Path) -> None:
+    def __init__(self, session_dir: Path | None = None, run_id: str | None = None) -> None:
         self._lock = threading.Lock()
         self._messages: list[AgentMessage] = []
+        if session_dir is None:
+            import tempfile
+            session_dir = Path(tempfile.mkdtemp())
         self._log_path = session_dir / "agent_messages.json"
         session_dir.mkdir(parents=True, exist_ok=True)
 
