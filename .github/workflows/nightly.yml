@@ -112,6 +112,15 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - run: uv python install 3.11
       - run: uv sync
+      - name: Install pandoc + LaTeX for PDF generation
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pandoc \
+            texlive-xetex \
+            texlive-latex-extra \
+            texlive-fonts-recommended \
+            fonts-dejavu
       - name: Run Reporter
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

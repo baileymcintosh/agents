@@ -1,8 +1,10 @@
-"""Report generator — renders Jinja2 templates and optionally exports to PDF."""
+"""Report generator — exports Markdown reports to professional LaTeX PDFs via pandoc."""
 
 from __future__ import annotations
 
 import datetime
+import subprocess
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -11,9 +13,30 @@ from loguru import logger
 
 from agentorg import config
 
+# LaTeX header for professional research report styling
+LATEX_HEADER = r"""
+\usepackage{geometry}
+\geometry{margin=1.2in}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{AgentOrg Research}}
+\fancyhead[R]{\small\textit{\today}}
+\fancyfoot[C]{\small\thepage}
+\usepackage{titling}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
+\usepackage{parskip}
+\setlength{\parindent}{0pt}
+\usepackage{mdframed}
+\usepackage{xcolor}
+\definecolor{execgray}{RGB}{245,245,245}
+"""
+
 
 class ReportGenerator:
-    """Renders Markdown reports from templates and exports them to PDF."""
+    """Renders Markdown reports from templates and exports to LaTeX PDF via pandoc."""
 
     def __init__(self, output_dir: str | None = None) -> None:
         self.output_dir = Path(output_dir) if output_dir else config.REPORTS_DIR
@@ -26,14 +49,73 @@ class ReportGenerator:
         )
 
     def render_template(self, template_name: str, context: dict[str, Any]) -> str:
-        """Render a Jinja2 template with the given context."""
         template = self.env.get_template(template_name)
         return template.render(**context)
+
+    def export_to_pdf(self, md_path: Path) -> Path | None:
+        """
+        Convert a Markdown file to a professionally typeset PDF using pandoc + LaTeX.
+        Returns the PDF path on success, None if pandoc is not available.
+        """
+        if not shutil.which("pandoc"):
+            logger.warning("[pdf] pandoc not found — skipping PDF export. Install pandoc to enable.")
+            return None
+
+        pdf_path = md_path.with_suffix(".pdf")
+
+        # Write a temporary LaTeX header file
+        header_path = self.output_dir / "_header.tex"
+        header_path.write_text(LATEX_HEADER, encoding="utf-8")
+
+        cmd = [
+            "pandoc",
+            str(md_path),
+            "--output", str(pdf_path),
+            "--pdf-engine=xelatex",
+            "--include-in-header", str(header_path),
+            "--variable", "fontsize=11pt",
+            "--variable", "linestretch=1.4",
+            "--variable", "mainfont=DejaVu Serif",
+            "--variable", "sansfont=DejaVu Sans",
+            "--variable", "monofont=DejaVu Sans Mono",
+            "--toc",                          # table of contents
+            "--toc-depth=2",
+            "--highlight-style=tango",
+            "--table-of-contents",
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                logger.info(f"[pdf] LaTeX PDF → {pdf_path.name}")
+                return pdf_path
+            else:
+                logger.error(f"[pdf] pandoc failed:\n{result.stderr[:500]}")
+                return None
+        except subprocess.TimeoutExpired:
+            logger.error("[pdf] pandoc timed out after 120s")
+            return None
+        except Exception as e:
+            logger.error(f"[pdf] Unexpected error: {e}")
+            return None
+
+    def export(self, format: str = "both") -> None:
+        """Export all Markdown reports in the output directory to PDF."""
+        md_files = list(self.output_dir.glob("*.md"))
+        logger.info(f"Exporting {len(md_files)} reports")
+        for md_file in md_files:
+            if format in ("pdf", "both"):
+                self.export_to_pdf(md_file)
 
     def generate_executive_summary(
         self,
         context: dict[str, Any] | None = None,
-        export_format: str = "markdown",
+        export_format: str = "both",
     ) -> Path:
         ctx = context or {
             "date": datetime.date.today().isoformat(),
@@ -43,51 +125,12 @@ class ReportGenerator:
             "risks": [],
             "next_steps": [],
         }
-
         content = self.render_template("executive_summary.md.j2", ctx)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         md_path = self.output_dir / f"{timestamp}_executive_summary.md"
         md_path.write_text(content, encoding="utf-8")
-        logger.info(f"Executive summary → {md_path.name}")
 
         if export_format in ("pdf", "both") and config.PDF_EXPORT_ENABLED:
-            self._export_pdf(md_path)
+            self.export_to_pdf(md_path)
 
         return md_path
-
-    def export(self, format: str = "both") -> None:
-        """Export all recent Markdown reports to the specified format."""
-        md_files = list(self.output_dir.glob("*.md"))
-        logger.info(f"Exporting {len(md_files)} reports as {format}")
-        for md_file in md_files:
-            if format in ("pdf", "both"):
-                self._export_pdf(md_file)
-
-    def _export_pdf(self, md_path: Path) -> Path:
-        """Convert a Markdown file to PDF using weasyprint."""
-        try:
-            import markdown
-            from weasyprint import HTML
-
-            html_content = markdown.markdown(md_path.read_text(encoding="utf-8"), extensions=["tables"])
-            styled_html = f"""<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<style>
-  body {{ font-family: Georgia, serif; max-width: 800px; margin: 40px auto; line-height: 1.6; }}
-  h1 {{ color: #1a1a2e; border-bottom: 2px solid #1a1a2e; }}
-  h2 {{ color: #16213e; }}
-  table {{ border-collapse: collapse; width: 100%; }}
-  th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-  th {{ background-color: #f2f2f2; }}
-  code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }}
-</style>
-</head><body>{html_content}</body></html>"""
-
-            pdf_path = md_path.with_suffix(".pdf")
-            HTML(string=styled_html).write_pdf(str(pdf_path))
-            logger.info(f"PDF → {pdf_path.name}")
-            return pdf_path
-        except ImportError as e:
-            logger.warning(f"PDF export skipped (missing dependency: {e})")
-            return md_path

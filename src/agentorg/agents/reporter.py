@@ -1,16 +1,14 @@
-"""Reporter agent — bundles findings into an executive summary and posts to Slack."""
+"""Reporter agent — synthesizes findings into an executive summary, exports to PDF, posts to Slack."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 from agentorg.agents.base import BaseAgent
 from agentorg import config
-
-
-
 
 
 class ReporterAgent(BaseAgent):
@@ -21,7 +19,7 @@ class ReporterAgent(BaseAgent):
         self.model = config.REPORTER_MODEL
 
     def _gather_recent_reports(self) -> str:
-        """Collect the latest planner, builder, and verifier reports."""
+        """Collect the latest planner, builder, and verifier reports from this run."""
         sections = []
         for agent_role in ("planner", "builder", "verifier"):
             files = sorted(
@@ -30,54 +28,95 @@ class ReporterAgent(BaseAgent):
                 reverse=True,
             )
             if files:
-                sections.append(f"## {agent_role.capitalize()} Report\n\n{files[0].read_text(encoding='utf-8')}")
-        return "\n\n---\n\n".join(sections) if sections else "No reports found."
+                latest = files[0]
+                content = latest.read_text(encoding="utf-8")
+                # Skip dry-run placeholder reports
+                if "_Dry-run mode_" in content or "Dry-run mode" in content:
+                    logger.warning(f"[reporter] Skipping dry-run report: {latest.name}")
+                    continue
+                sections.append(f"## {agent_role.capitalize()} Report\n\n{content}")
+        return "\n\n---\n\n".join(sections) if sections else "No live reports found this cycle."
+
+    def _write_slack_brief(self, summary: str) -> str:
+        """
+        Ask Claude to condense the executive summary into a 3–4 sentence Slack brief.
+        This is what gets posted as the Slack message — the full PDF is attached separately.
+        """
+        brief_prompt = (
+            "Condense the following executive summary into a Slack message of exactly 3–4 sentences. "
+            "Write for a senior executive who is about to open a detailed PDF report. "
+            "Cover: what was researched, the single most important finding, and one key risk or next step. "
+            "Be specific and direct. No bullet points — flowing prose only.\n\n"
+            f"{summary}"
+        )
+        return self.call_claude(brief_prompt)
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("[reporter] Building executive summary.")
         context = self._gather_recent_reports()
 
-        prompt = (
-            "You are the reporter agent. Based on the reports below, write a concise "
-            "executive summary for a non-technical leader. Use plain language. Include:\n"
-            "- What the team accomplished this cycle\n"
-            "- Key findings or insights\n"
-            "- Any risks or blockers\n"
-            "- Recommended next steps\n"
-            "Keep it to one page. Use bullet points and bold headers.\n\n"
+        summary_prompt = (
+            "You are the reporter agent for a professional research organization. "
+            "Based on the reports below, write a comprehensive executive summary. "
+            "Structure it as a formal research brief with these sections:\n"
+            "1. **One-Line Status** — single sentence on where things stand\n"
+            "2. **What Was Researched This Cycle** — what the team worked on\n"
+            "3. **Key Findings** — the most important discoveries, specific and direct\n"
+            "4. **Scenario Outlook** — if scenarios were developed, summarize the top 2-3\n"
+            "5. **Financial Markets Implications** — if relevant, key market signals\n"
+            "6. **Quality Assessment** — verifier's verdict and confidence\n"
+            "7. **Recommended Next Steps** — what should happen next cycle\n\n"
+            "Write clearly. No jargon. This goes to a non-technical executive "
+            "who will read the full PDF for detail.\n\n"
             f"{context}"
         )
 
         if dry_run:
             summary = "_Dry-run mode — no Claude call made._"
+            brief = "_Dry-run mode._"
         else:
-            summary = self.call_claude(prompt)
+            summary = self.call_claude(summary_prompt)
+            brief = self._write_slack_brief(summary)
 
+        # Write the full Markdown report
         report_path = self.write_report("Executive Summary", summary)
 
-        # Post to Slack if configured — errors are logged but never crash the pipeline
+        # Export to LaTeX PDF
+        pdf_path: Path | None = None
+        if not dry_run and config.PDF_EXPORT_ENABLED:
+            from agentorg.reporting.generator import ReportGenerator
+            gen = ReportGenerator()
+            pdf_path = gen.export_to_pdf(report_path)
+            if pdf_path:
+                logger.info(f"[reporter] PDF ready: {pdf_path.name}")
+
+        # Post to Slack — brief message + PDF attachment
         if config.SLACK_BOT_TOKEN and config.SLACK_EXECUTIVE_CHANNEL_ID and not dry_run:
             try:
                 from agentorg.slack_bot.client import SlackClient
-                from slack_sdk.errors import SlackApiError
                 slack = SlackClient()
+
+                # Post the short brief as a message
+                cycle_date = report_path.stem.split("_")[0]  # YYYYMMDD
                 slack.post_message(
                     channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
-                    text=f"*Executive Summary — {report_path.stem}*\n\n{summary[:2900]}",
-                )
-                slack.upload_file(
-                    channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
-                    file_path=str(report_path),
-                    title=report_path.stem,
-                )
-                logger.info("[reporter] Slack post successful.")
-            except Exception as e:
-                logger.error(
-                    f"[reporter] Slack post failed: {e}\n"
-                    "Fix: invite the AgentOrg bot to the channel with /invite @AgentOrg"
+                    text=f"*Research Report — {cycle_date}*\n\n{brief}",
                 )
 
-        return {"status": "ok", "report": str(report_path)}
+                # Upload the PDF (preferred) or fall back to Markdown
+                file_to_upload = str(pdf_path) if pdf_path else str(report_path)
+                file_title = f"Executive Summary — {cycle_date}"
+                slack.upload_file(
+                    channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
+                    file_path=file_to_upload,
+                    title=file_title,
+                    initial_comment="Full report attached.",
+                )
+                logger.info("[reporter] Slack post + file upload complete.")
+            except Exception as e:
+                logger.error(f"[reporter] Slack error (non-fatal): {e}")
+
+        return {"status": "ok", "report": str(report_path), "pdf": str(pdf_path) if pdf_path else None}
 
 
 def main(dry_run: bool = False) -> None:
