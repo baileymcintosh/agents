@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+import time
+
 import anthropic
 from loguru import logger
 
@@ -72,7 +74,19 @@ class BaseAgent(ABC):
             if tools:
                 kwargs["tools"] = tools
 
-            response = self.client.messages.create(**kwargs)
+            # Retry up to 5 times on rate limit errors with exponential backoff
+            response = None
+            for attempt in range(5):
+                try:
+                    response = self.client.messages.create(**kwargs)
+                    break
+                except anthropic.RateLimitError as e:
+                    wait = 60 * (2 ** attempt)  # 60s, 120s, 240s, 480s, 960s
+                    logger.warning(f"[{self.role}] Rate limited — waiting {wait}s before retry {attempt + 1}/5")
+                    time.sleep(wait)
+                    if attempt == 4:
+                        raise e
+            assert response is not None
 
             # If Claude is done (no more tool calls), return the text
             if response.stop_reason == "end_turn":
