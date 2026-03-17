@@ -53,3 +53,32 @@ jobs:
           git diff --staged --quiet || git commit -m "agent: ${{ github.event.inputs.agent }} $(date -u +%Y-%m-%dT%H:%M)"
           git pull --rebase origin main
           git push
+
+  # ── Debugger: runs if the agent job above crashes completely ───────────────
+  debug:
+    name: "🔧 Debugger"
+    needs: [run-agent]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.11
+      - run: uv sync
+      - name: Run Debugger
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run agentorg run debugger
+      - name: Push debug report
+        run: |
+          git config user.name "AgentOrg Bot"
+          git config user.email "agentorg-bot@users.noreply.github.com"
+          git add reports/
+          git diff --staged --quiet || git commit -m "debug: ${{ github.event.inputs.agent }} failure $(date -u +%Y-%m-%dT%H:%M)"
+          git pull --rebase origin main
+          git push
