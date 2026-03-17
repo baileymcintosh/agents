@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       project_name:
-        description: "Project name (must match an existing projects/ directory)"
+        description: "Project name (must match existing repo baileymcintosh/<project_name>)"
         required: true
         type: string
       team:
@@ -29,11 +29,10 @@ env:
   TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
   FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
   EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
-  PLANNER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   QUAL_BUILDER_MODEL: "gpt-4o"
   QUANT_BUILDER_MODEL: "claude-sonnet-4-6"
-  REPORTER_MODEL: "claude-sonnet-4-6"
-  REPORTS_DIR: "reports"
+  REPORTER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
 
 jobs:
   deep:
@@ -44,8 +43,10 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout agents repo
+        uses: actions/checkout@v4
         with: { ref: main }
+
       - uses: astral-sh/setup-uv@v4
       - run: uv python install 3.11
       - run: uv sync
@@ -55,44 +56,47 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends pandoc texlive-xetex texlive-fonts-recommended fonts-dejavu
 
-      - name: Configure git
+      - name: Clone project repo
         run: |
+          gh repo clone "baileymcintosh/${{ github.event.inputs.project_name }}" /tmp/project
+          cd /tmp/project
           git config user.name "AgentOrg Bot"
           git config user.email "agentorg-bot@users.noreply.github.com"
+          mkdir -p reports notebooks data
 
-      - name: Write feedback if provided
+      - name: Write feedback
         if: ${{ github.event.inputs.feedback != '' }}
-        run: |
-          echo "${{ github.event.inputs.feedback }}" > "projects/${{ github.event.inputs.project_name }}/FEEDBACK.md"
-          echo "REPORTS_DIR=projects/${{ github.event.inputs.project_name }}/reports" >> $GITHUB_ENV
+        run: echo "${{ github.event.inputs.feedback }}" > /tmp/project/FEEDBACK.md
 
-      - name: Run deep agents
+      - name: Run deep agents (parallel where possible)
+        env:
+          REPORTS_DIR: /tmp/project/reports
         run: |
           TEAM="${{ github.event.inputs.team }}"
-          IFS=',' read -ra ROLES <<< "$TEAM"
 
-          # Run parallel-capable roles simultaneously
+          # Run qual + quant in parallel, everything else sequential after
           PIDS=()
-          for role in "${ROLES[@]}"; do
-            role=$(echo "$role" | tr -d ' ')
-            if [[ "$role" == "reporter" || "$role" == "verifier" ]]; then continue; fi
-            echo "--- $role (background) ---"
-            uv run agentorg run "$role" &
-            PIDS+=($!)
+          for role in qual_builder quant_builder researcher data_analyst coder; do
+            if echo "$TEAM" | grep -q "$role"; then
+              echo "=== $role (parallel) ==="
+              uv run agentorg run "$role" &
+              PIDS+=($!)
+            fi
           done
-          for pid in "${PIDS[@]}"; do wait "$pid" || echo "agent exited with error"; done
+          for pid in "${PIDS[@]}"; do wait "$pid" || true; done
 
-          # Sequential finishing roles
           for role in verifier reporter; do
             if echo "$TEAM" | grep -q "$role"; then
-              echo "--- $role ---"
+              echo "=== $role ==="
               uv run agentorg run "$role" || echo "$role error"
             fi
           done
 
-      - name: Push outputs
+      - name: Push outputs to project repo
         run: |
-          git add "projects/${{ github.event.inputs.project_name }}/"
-          git diff --staged --quiet || git commit -m "deep: ${{ github.event.inputs.project_name }} outputs"
+          cd /tmp/project
+          git add .
+          git diff --staged --quiet || git commit -m "deep: research outputs (${{ github.event.inputs.model_tier }})"
           git pull --rebase origin main
           git push
+          echo "Results: https://github.com/baileymcintosh/${{ github.event.inputs.project_name }}"

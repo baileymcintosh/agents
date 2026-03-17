@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       team:
-        description: "Comma-separated agent roles e.g. researcher,data_analyst,reporter"
+        description: "Comma-separated agent roles e.g. qual_builder,quant_builder,reporter"
         required: true
         type: string
 
@@ -23,17 +23,12 @@ env:
   TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
   FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
   EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
-  # Prelim uses cheap/fast models
-  PLANNER_MODEL: "claude-opus-4-6"
-  RESEARCHER_MODEL: "llama-3.3-70b-versatile"
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # Prelim model assignments — Groq (free) for qual/research, Sonnet for quant (needs tool use)
   QUAL_BUILDER_MODEL: "llama-3.3-70b-versatile"
   QUANT_BUILDER_MODEL: "claude-sonnet-4-6"
-  DATA_ANALYST_MODEL: "claude-sonnet-4-6"
-  CODER_MODEL: "claude-sonnet-4-6"
-  VERIFIER_MODEL: "llama-3.3-70b-versatile"
   REPORTER_MODEL: "claude-sonnet-4-6"
   TIME_BUDGET: "8m"
-  REPORTS_DIR: "reports"
 
 jobs:
   prelim:
@@ -44,24 +39,42 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout agents repo
+        uses: actions/checkout@v4
         with: { ref: main }
+
       - uses: astral-sh/setup-uv@v4
       - run: uv python install 3.11
       - run: uv sync
 
-      - name: Configure git
+      - name: Create or clone project repo
         run: |
+          PROJECT="${{ github.event.inputs.project_name }}"
+          REPO="baileymcintosh/${PROJECT}"
+
+          # Create repo if it doesn't exist
+          if ! gh repo view "$REPO" > /dev/null 2>&1; then
+            gh repo create "$REPO" --public \
+              --description "${{ github.event.inputs.brief }}" \
+              --add-readme
+            echo "created=true" >> $GITHUB_ENV
+          fi
+
+          # Clone it
+          gh repo clone "$REPO" /tmp/project
+          cd /tmp/project
+
           git config user.name "AgentOrg Bot"
           git config user.email "agentorg-bot@users.noreply.github.com"
 
-      - name: Write project brief
-        run: |
-          mkdir -p "projects/${{ github.event.inputs.project_name }}/reports"
-          echo "${{ github.event.inputs.brief }}" > "projects/${{ github.event.inputs.project_name }}/BRIEF.md"
-          echo "REPORTS_DIR=projects/${{ github.event.inputs.project_name }}/reports" >> $GITHUB_ENV
+          mkdir -p reports notebooks data
+          echo "${{ github.event.inputs.brief }}" > BRIEF.md
+          git add . && git diff --staged --quiet || git commit -m "init: project setup"
+          git push
 
       - name: Run preliminary agents
+        env:
+          REPORTS_DIR: /tmp/project/reports
         run: |
           TEAM="${{ github.event.inputs.team }}"
           IFS=',' read -ra ROLES <<< "$TEAM"
@@ -69,16 +82,18 @@ jobs:
           for role in "${ROLES[@]}"; do
             role=$(echo "$role" | tr -d ' ')
             if [ "$role" = "reporter" ]; then continue; fi
-            echo "--- $role ---"
+            echo "=== $role ==="
             uv run agentorg run "$role" --time-budget 8m || echo "$role error — continuing"
           done
 
-          echo "--- reporter ---"
+          echo "=== reporter ==="
           uv run agentorg run reporter --time-budget 4m || echo "reporter error"
 
-      - name: Push outputs
+      - name: Push outputs to project repo
         run: |
-          git add "projects/${{ github.event.inputs.project_name }}/"
-          git diff --staged --quiet || git commit -m "prelim: ${{ github.event.inputs.project_name }} initial outputs"
+          cd /tmp/project
+          git add .
+          git diff --staged --quiet || git commit -m "prelim: initial research outputs"
           git pull --rebase origin main
           git push
+          echo "Project repo: https://github.com/baileymcintosh/${{ github.event.inputs.project_name }}"

@@ -24,7 +24,7 @@ from loguru import logger
 
 GITHUB_USER = "baileymcintosh"
 GH_CLI = "/c/Program Files/GitHub CLI/gh.exe"
-PROJECTS_ROOT = Path.home() / "OneDrive - PennO365" / "Projects" / "GITHUB"
+PROJECTS_ROOT = Path.home() / "OneDrive - PennO365" / "Projects" / "GITHUB" / "agent projects"
 
 
 def create_project(project_name: str, brief: str, plan_content: str = "") -> dict:
