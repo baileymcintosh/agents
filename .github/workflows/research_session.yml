@@ -39,10 +39,10 @@ env:
   SESSION_COLLAB_TURNS: ${{ github.event.inputs.collab_turns }}
   GITHUB_REPOSITORY: ${{ github.repository }}
   PLANNER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
-  QUANT_BUILDER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
-  QUAL_BUILDER_MODEL: "gpt-4o"
+  QUANT_BUILDER_MODEL: "claude-sonnet-4-6"
+  QUAL_BUILDER_MODEL: "gpt-4.5-preview"
   VERIFIER_MODEL: "claude-sonnet-4-6"
-  REPORTER_MODEL: "claude-sonnet-4-6"
+  REPORTER_MODEL: "gpt-4.5-preview"
 
 jobs:
   session:

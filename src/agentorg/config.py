@@ -23,12 +23,12 @@ AGENT_MAX_TOKENS: int = int(os.getenv("AGENT_MAX_TOKENS", "8000"))
 PLANNER_MODEL: str = os.getenv("PLANNER_MODEL", "claude-opus-4-6")
 BUILDER_MODEL: str = os.getenv("BUILDER_MODEL", "claude-opus-4-6")
 VERIFIER_MODEL: str = os.getenv("VERIFIER_MODEL", "claude-sonnet-4-6")
-REPORTER_MODEL: str = os.getenv("REPORTER_MODEL", "claude-sonnet-4-6")
+REPORTER_MODEL: str = os.getenv("REPORTER_MODEL", "gpt-4.5-preview")
 
 # OpenAI — used by the qual builder (qualitative/policy analyst)
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-QUAL_BUILDER_MODEL: str = os.getenv("QUAL_BUILDER_MODEL", "gpt-4o")
-QUANT_BUILDER_MODEL: str = os.getenv("QUANT_BUILDER_MODEL", "claude-opus-4-6")
+QUAL_BUILDER_MODEL: str = os.getenv("QUAL_BUILDER_MODEL", "gpt-4.5-preview")
+QUANT_BUILDER_MODEL: str = os.getenv("QUANT_BUILDER_MODEL", "claude-sonnet-4-6")
 
 # Collaborative session — how many back-and-forth turns between qual and quant per cycle
 SESSION_COLLAB_TURNS: int = int(os.getenv("SESSION_COLLAB_TURNS", "3"))

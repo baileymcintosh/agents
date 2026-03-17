@@ -33,7 +33,7 @@ class BaseAgent(ABC):
         self.client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
         # Fast mode overrides per-role model with Sonnet and caps tokens
         if config.FAST_MODE:
-            self.model = config.REPORTER_MODEL  # Sonnet
+            self.model = config.REPORTER_MODEL
             self.max_tokens = config.FAST_MAX_TOKENS
         else:
             self.model = config.AGENT_MODEL
@@ -43,6 +43,33 @@ class BaseAgent(ABC):
         self.system_prompt = self._load_system_prompt()
         self.use_search = bool(config.TAVILY_API_KEY)
         self.clock: RunClock | None = RunClock.load()
+
+    def _is_openai_model(self) -> bool:
+        return self.model.startswith(("gpt-", "o1-", "o3-", "o4-", "codex"))
+
+    def _call_openai(self, user_message: str) -> str:
+        """Simple OpenAI chat completion — used when self.model is a GPT/o-series model."""
+        import openai
+        client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+        logger.info(f"[{self.role}] → OpenAI ({self.model})")
+        for attempt in range(4):
+            try:
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    max_tokens=self.max_tokens,
+                )
+                return response.choices[0].message.content or ""
+            except Exception as e:
+                if "rate" in str(e).lower() and attempt < 3:
+                    wait = 30 * (2 ** attempt)
+                    logger.warning(f"[{self.role}] OpenAI rate limit — waiting {wait}s")
+                    time.sleep(wait)
+                else:
+                    raise
 
     def _load_system_prompt(self) -> str:
         prompt_path = config.AGENT_DOCS_DIR / f"{self.role}.md"
@@ -56,11 +83,13 @@ class BaseAgent(ABC):
 
     def call_claude(self, user_message: str, extra_context: str = "") -> str:
         """
-        Send a message to Claude with web search tool use enabled.
-        Claude will automatically call web_search as many times as needed,
-        and we execute those calls and return results until Claude is done.
+        Send a message to the configured model. Routes to OpenAI if self.model is a GPT/o-series model,
+        otherwise uses Anthropic Claude with web search tool use.
         """
         content = f"{extra_context}\n\n{user_message}" if extra_context else user_message
+
+        if self._is_openai_model():
+            return self._call_openai(content)
         messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
 
         # Inject time context into the message if a budget is active

@@ -84,11 +84,11 @@ flowchart TD
 
 | Agent | Model | Tools | Role |
 |---|---|---|---|
-| **Planner** | Claude Opus/Sonnet | Web search | Sets research agenda, assigns sections, tracks completion |
-| **Qual Builder** | OpenAI GPT-4o | Web search (Tavily) | Policy analyst — news, speeches, geopolitical narrative |
-| **Quant Builder** | Claude Opus/Sonnet | Python exec + Web search | Data scientist — live prices, charts, statistical analysis |
+| **Planner** | Claude Opus *(premium)* | Web search | Sets research agenda, assigns sections, tracks completion |
+| **Qual Builder** | OpenAI GPT-4.5 | Web search (Tavily) | Policy analyst — news, speeches, geopolitical narrative |
+| **Quant Builder** | Claude Sonnet | Python exec + Web search | Data scientist — live prices, charts, statistical analysis |
 | **Verifier** | Claude Sonnet | Web search | Fact-checker — cross-checks both builders against sources |
-| **Reporter** | Claude Sonnet | Web search | Senior editor — synthesises everything into final document |
+| **Reporter** | OpenAI GPT-4.5 | — | Senior editor — synthesises everything into final document |
 | **Debugger** | Claude Sonnet | Web search + logs | Auto-fires on failure, diagnoses issues |
 
 ---
