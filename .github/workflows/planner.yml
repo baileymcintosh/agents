@@ -1,0 +1,59 @@
+name: Planner Agent
+
+on:
+  # Run every Monday at 8 AM UTC to kick off the week
+  schedule:
+    - cron: "0 8 * * 1"
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no Claude calls)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+jobs:
+  plan:
+    name: Generate Weekly Research Plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run Planner Agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_EXECUTIVE_CHANNEL_ID: ${{ secrets.SLACK_EXECUTIVE_CHANNEL_ID }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          uv run agentorg run planner $DRY_RUN_FLAG
+
+      - name: Commit and push reports
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          git config user.name "AgentOrg Bot"
+          git config user.email "agentorg-bot@users.noreply.github.com"
+          git add reports/
+          git diff --staged --quiet || git commit -m "chore: planner report $(date -u +%Y-%m-%d)"
+          git push

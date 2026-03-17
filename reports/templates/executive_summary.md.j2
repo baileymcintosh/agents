@@ -1,0 +1,57 @@
+# Executive Summary — {{ period }} Report
+
+**Date:** {{ date }}
+**Prepared by:** Reporter Agent (AI)
+
+---
+
+## What We Accomplished
+
+{% if accomplishments %}
+{% for item in accomplishments %}
+- {{ item }}
+{% endfor %}
+{% else %}
+_No accomplishments recorded this period._
+{% endif %}
+
+---
+
+## Key Findings & Insights
+
+{% if findings %}
+{% for item in findings %}
+- {{ item }}
+{% endfor %}
+{% else %}
+_No findings recorded this period._
+{% endif %}
+
+---
+
+## Risks & Blockers
+
+{% if risks %}
+{% for item in risks %}
+- **{{ item.title }}**: {{ item.description }}
+{% endfor %}
+{% else %}
+_No active risks or blockers._
+{% endif %}
+
+---
+
+## Recommended Next Steps
+
+{% if next_steps %}
+{% for i, step in enumerate(next_steps, 1) %}
+{{ i }}. {{ step }}
+{% endfor %}
+{% else %}
+_No next steps defined yet._
+{% endif %}
+
+---
+
+*This report was generated automatically by the AgentOrg reporter agent.
+For questions, contact the system administrator.*

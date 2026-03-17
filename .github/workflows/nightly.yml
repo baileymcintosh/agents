@@ -1,0 +1,127 @@
+name: Nightly Full Pipeline
+
+on:
+  # Run every night at 2 AM UTC
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no Claude calls or Slack posts)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+jobs:
+  # ── Step 1: Plan ───────────────────────────────────────────────────────────
+  plan:
+    name: "1 — Planner"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.11
+      - run: uv sync
+      - name: Run Planner
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
+        run: |
+          FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
+          uv run agentorg run planner $FLAG
+      - name: Push reports
+        run: |
+          git config user.name "AgentOrg Bot"
+          git config user.email "agentorg-bot@users.noreply.github.com"
+          git add reports/
+          git diff --staged --quiet || git commit -m "nightly: planner $(date -u +%Y-%m-%dT%H:%M)"
+          git push
+
+  # ── Step 2: Build ──────────────────────────────────────────────────────────
+  build:
+    name: "2 — Builder"
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.11
+      - run: uv sync
+      - name: Run Builder
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
+        run: |
+          FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
+          uv run agentorg run builder $FLAG
+      - name: Push reports
+        run: |
+          git config user.name "AgentOrg Bot"
+          git config user.email "agentorg-bot@users.noreply.github.com"
+          git add reports/
+          git diff --staged --quiet || git commit -m "nightly: builder $(date -u +%Y-%m-%dT%H:%M)"
+          git push
+
+  # ── Step 3: Verify ─────────────────────────────────────────────────────────
+  verify:
+    name: "3 — Verifier"
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.11
+      - run: uv sync
+      - name: Run Verifier
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
+        run: |
+          FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
+          uv run agentorg run verifier $FLAG
+      - name: Push reports
+        run: |
+          git config user.name "AgentOrg Bot"
+          git config user.email "agentorg-bot@users.noreply.github.com"
+          git add reports/
+          git diff --staged --quiet || git commit -m "nightly: verifier $(date -u +%Y-%m-%dT%H:%M)"
+          git push
+
+  # ── Step 4: Report → Executive + Slack ────────────────────────────────────
+  report:
+    name: "4 — Executive Report + Slack"
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.11
+      - run: uv sync
+      - name: Run Reporter
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_EXECUTIVE_CHANNEL_ID: ${{ secrets.SLACK_EXECUTIVE_CHANNEL_ID }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-4-6' }}
+        run: |
+          FLAG=$([[ "${{ github.event.inputs.dry_run }}" == "true" ]] && echo "--dry-run" || echo "")
+          uv run agentorg run reporter $FLAG
+      - name: Push final reports
+        run: |
+          git config user.name "AgentOrg Bot"
+          git config user.email "agentorg-bot@users.noreply.github.com"
+          git add reports/
+          git diff --staged --quiet || git commit -m "nightly: executive summary $(date -u +%Y-%m-%dT%H:%M)"
+          git push

@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  # Planner: surveys the research landscape and creates a prioritized task list
+  planner:
+    build: .
+    env_file: .env
+    environment:
+      - AGENT_ROLE=planner
+    volumes:
+      - ./reports:/workspace/reports
+      - ./data:/workspace/data
+      - ./agent_docs:/workspace/agent_docs
+    command: ["agentorg", "run", "planner"]
+
+  # Builder: executes tasks from the planner's list and produces outputs
+  builder:
+    build: .
+    env_file: .env
+    environment:
+      - AGENT_ROLE=builder
+    volumes:
+      - ./reports:/workspace/reports
+      - ./data:/workspace/data
+    command: ["agentorg", "run", "builder"]
+
+  # Verifier: reviews builder outputs and writes a QA sign-off report
+  verifier:
+    build: .
+    env_file: .env
+    environment:
+      - AGENT_ROLE=verifier
+    volumes:
+      - ./reports:/workspace/reports
+    command: ["agentorg", "run", "verifier"]
+
+  # Reporter: bundles findings into an executive summary and posts to Slack
+  reporter:
+    build: .
+    env_file: .env
+    environment:
+      - AGENT_ROLE=reporter
+    volumes:
+      - ./reports:/workspace/reports
+    command: ["agentorg", "run", "reporter"]
+
+  # Jupyter notebook server — development only
+  notebooks:
+    build: .
+    env_file: .env
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/workspace/notebooks
+      - ./data:/workspace/data
+    command: ["jupyter", "notebook", "--ip=0.0.0.0", "--no-browser", "--allow-root"]
+    profiles:
+      - dev
