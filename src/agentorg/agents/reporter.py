@@ -1,7 +1,9 @@
-"""Reporter agent — synthesizes findings into an executive summary, exports to PDF, posts to Slack."""
+"""Reporter agent — synthesizes findings into an executive summary, exports to PDF + notebook, posts to Slack."""
 
 from __future__ import annotations
 
+import datetime
+import re
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,7 @@ class ReporterAgent(BaseAgent):
         super().__init__()
         if not config.FAST_MODE:
             self.model = config.REPORTER_MODEL
-        # Reporter always gets full token budget — it synthesizes everything and must never truncate
+        # Reporter always gets full token budget — synthesizes everything, must never truncate
         self.max_tokens = config.AGENT_MAX_TOKENS
         self.clock = None  # disable time-budget token cap for reporter
 
@@ -29,7 +31,6 @@ class ReporterAgent(BaseAgent):
         """
         sections = []
 
-        # All builder reports (every cycle adds a new section — include them all)
         builder_files = sorted(
             config.REPORTS_DIR.glob("*_builder_*.md"),
             key=lambda f: f.stat().st_mtime,
@@ -40,7 +41,6 @@ class ReporterAgent(BaseAgent):
                 continue
             sections.append(f"## Builder Report — {f.stem}\n\n{content}")
 
-        # Latest planner and verifier only (for context on project status and QA verdict)
         for agent_role in ("planner", "verifier"):
             files = sorted(
                 config.REPORTS_DIR.glob(f"*_{agent_role}_*.md"),
@@ -56,36 +56,185 @@ class ReporterAgent(BaseAgent):
         return "\n\n---\n\n".join(sections) if sections else "No live reports found this cycle."
 
     def _write_slack_brief(self, summary: str) -> str:
-        """
-        Ask Claude to condense the executive summary into a 3–4 sentence Slack brief.
-        This is what gets posted as the Slack message — the full PDF is attached separately.
-        """
         brief_prompt = (
             "Condense the following executive summary into a Slack message of exactly 3–4 sentences. "
-            "Write for a senior executive who is about to open a detailed PDF report. "
+            "Write for a senior executive who is about to open a detailed report. "
             "Cover: what was researched, the single most important finding, and one key risk or next step. "
             "Be specific and direct. No bullet points — flowing prose only.\n\n"
             f"{summary}"
         )
         return self.call_claude(brief_prompt)
 
+    def _collect_chart_data(self, summary: str) -> dict[str, Any]:
+        """Merge chart_data blocks from all builder reports and the summary."""
+        from agentorg.reporting.charts import extract_chart_data
+        combined: dict[str, Any] = {}
+        builder_files = sorted(
+            config.REPORTS_DIR.glob("*_builder_*.md"),
+            key=lambda f: f.stat().st_mtime,
+        )
+        for bf in builder_files:
+            text = bf.read_text(encoding="utf-8")
+            data = extract_chart_data(text)
+            for key, val in data.items():
+                if key in combined and isinstance(combined[key], list) and isinstance(val, list):
+                    combined[key].extend(val)
+                else:
+                    combined[key] = val
+        combined.update(extract_chart_data(summary))
+        return combined
+
+    def _generate_charts(self, combined_data: dict[str, Any]) -> dict[str, Path]:
+        """Generate PNG charts from combined data. Returns {key: path} dict."""
+        from agentorg.reporting.charts import (
+            scenario_probability_chart,
+            market_impact_chart,
+            timeline_chart,
+        )
+        chart_paths: dict[str, Path] = {}
+
+        if "scenarios" in combined_data:
+            p = scenario_probability_chart(
+                combined_data["scenarios"][:10],
+                config.REPORTS_DIR / "chart_scenarios.png",
+                title=combined_data.get("scenario_title", "Scenario Probability Distribution"),
+            )
+            if p:
+                chart_paths["scenarios"] = p
+
+        if "market_impacts" in combined_data:
+            p = market_impact_chart(
+                combined_data["market_impacts"][:12],
+                config.REPORTS_DIR / "chart_market_impact.png",
+                title=combined_data.get("market_title", "Estimated Market Impact by Asset Class"),
+            )
+            if p:
+                chart_paths["market_impacts"] = p
+
+        if "timeline" in combined_data:
+            p = timeline_chart(
+                combined_data["timeline"][:14],
+                config.REPORTS_DIR / "chart_timeline.png",
+                title=combined_data.get("timeline_title", "Event Timeline"),
+            )
+            if p:
+                chart_paths["timeline"] = p
+
+        logger.info(f"[reporter] Generated {len(chart_paths)} chart(s): {list(chart_paths.keys())}")
+        return chart_paths
+
+    def _inject_charts_into_markdown(self, text: str, chart_paths: dict[str, Path]) -> str:
+        """
+        Insert chart image references inline in the markdown at appropriate sections.
+        The timeline goes near the top; scenario/market charts go after their sections.
+        Pandoc then embeds these as full-bleed figures in the PDF.
+        """
+        TRIGGERS = {
+            "scenarios": ["scenario", "outlook", "probability"],
+            "market_impacts": ["market", "financial", "asset", "energy", "oil"],
+            "timeline": ["timeline", "chronol", "situation", "status", "one-line"],
+        }
+
+        used: set[str] = set()
+
+        def _img(key: str) -> str:
+            path = chart_paths[key]
+            label = path.stem.replace("_", " ").title()
+            return f"\n\n![{label}]({path})\n\n"
+
+        lines = text.split("\n")
+        result = []
+
+        for line in lines:
+            result.append(line)
+            # After a heading line, check if we should insert a chart
+            if line.startswith("#"):
+                heading_lower = line.lower()
+                for key, keywords in TRIGGERS.items():
+                    if key in chart_paths and key not in used:
+                        if any(kw in heading_lower for kw in keywords):
+                            result.append(_img(key))
+                            used.add(key)
+                            break
+
+        # Append any unused charts at the end
+        for key, path in chart_paths.items():
+            if key not in used:
+                label = key.replace("_", " ").title()
+                result.append(f"\n\n---\n\n## {label}\n\n")
+                result.append(_img(key))
+
+        return "\n".join(result)
+
+    def _export_pdf(self, md_path: Path, chart_paths: dict[str, Path]) -> Path | None:
+        """Generate PDF from chart-enriched markdown via pandoc."""
+        import subprocess
+        pdf_path = md_path.with_suffix(".pdf")
+        # Resource path includes the reports dir so pandoc finds the PNG files
+        cmd = [
+            "pandoc", str(md_path),
+            "--output", str(pdf_path),
+            "--pdf-engine=xelatex",
+            "--toc",
+            f"--resource-path={config.REPORTS_DIR}",
+            "-V", "geometry:margin=1in",
+            "-V", "fontsize=11pt",
+            "-V", "colorlinks=true",
+            "--highlight-style=tango",
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode == 0:
+                logger.info(f"[reporter] PDF ready: {pdf_path.name}")
+                return pdf_path
+            logger.warning(f"[reporter] pandoc failed: {result.stderr[:500]}")
+        except Exception as e:
+            logger.warning(f"[reporter] PDF export failed: {e}")
+        return None
+
+    def _export_notebook(
+        self, summary: str, chart_paths: dict[str, Path], report_path: Path
+    ) -> Path | None:
+        """Build and save a Jupyter notebook with charts embedded as outputs."""
+        try:
+            from agentorg.reporting.notebook import build_notebook, save_notebook
+            meta = {
+                "project": "Iran–USA–Israel War Research",
+                "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "model": self.model,
+            }
+            nb = build_notebook(summary, chart_paths, metadata=meta)
+            if nb is None:
+                return None
+            nb_path = report_path.with_suffix(".ipynb")
+            return save_notebook(nb, nb_path)
+        except Exception as e:
+            logger.warning(f"[reporter] Notebook export failed (non-fatal): {e}")
+            return None
+
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("[reporter] Building executive summary.")
+        self.post_slack_progress("📝", "starting", "Synthesizing all research cycles into final report...")
+
         context = self._gather_recent_reports()
 
         summary_prompt = (
             "You are the reporter agent for a professional research organization. "
-            "Based on the reports below, write a comprehensive executive summary. "
-            "Structure it as a formal research brief with these sections:\n"
-            "1. **One-Line Status** — single sentence on where things stand\n"
-            "2. **What Was Researched This Cycle** — what the team worked on\n"
-            "3. **Key Findings** — the most important discoveries, specific and direct\n"
-            "4. **Scenario Outlook** — if scenarios were developed, summarize the top 2-3\n"
-            "5. **Financial Markets Implications** — if relevant, key market signals\n"
-            "6. **Quality Assessment** — verifier's verdict and confidence\n"
-            "7. **Recommended Next Steps** — what should happen next cycle\n\n"
-            "Write clearly. No jargon. This goes to a non-technical executive "
-            "who will read the full PDF for detail.\n\n"
+            "Based on ALL the builder reports below (covering multiple research cycles), "
+            "write a comprehensive, publication-quality executive summary.\n\n"
+            "Structure:\n"
+            "# [Project Title]\n\n"
+            "## One-Line Status\n"
+            "## Situation Overview\n"
+            "## Key Findings\n"
+            "## Scenario Outlook\n"
+            "## Financial Markets Implications\n"
+            "## Historical Precedents\n"
+            "## Quality Assessment\n"
+            "## Recommended Next Steps\n\n"
+            "Be comprehensive — synthesize ALL cycles, not just the latest. "
+            "Use specific facts, dates, figures, and named sources. "
+            "This is the final deliverable that goes to senior leadership.\n\n"
             f"{context}"
         )
 
@@ -96,106 +245,78 @@ class ReporterAgent(BaseAgent):
             summary = self.call_claude(summary_prompt)
             brief = self._write_slack_brief(summary)
 
-        # Write the full Markdown report
-        report_path = self.write_report("Executive Summary", summary)
-
-        # Generate charts — scan ALL builder reports for chart_data blocks, not just the summary
-        chart_paths: list[Path] = []
+        # Collect chart data and generate PNGs
+        chart_paths: dict[str, Path] = {}
         if not dry_run:
             try:
-                from agentorg.reporting.charts import generate_all_charts, extract_chart_data
-                # Collect chart_data from every builder report in the session
-                combined_data: dict = {}
-                builder_files = sorted(config.REPORTS_DIR.glob("*_builder_*.md"), key=lambda f: f.stat().st_mtime)
-                for bf in builder_files:
-                    text = bf.read_text(encoding="utf-8")
-                    data = extract_chart_data(text)
-                    # Merge: later cycles append to lists, don't overwrite
-                    for key, val in data.items():
-                        if key in combined_data and isinstance(combined_data[key], list) and isinstance(val, list):
-                            combined_data[key].extend(val)
-                        else:
-                            combined_data[key] = val
-                # Also scan the summary itself
-                combined_data.update(extract_chart_data(summary))
-
-                # Generate whichever chart types we have data for
-                from agentorg.reporting.charts import scenario_probability_chart, market_impact_chart, timeline_chart
-                if "scenarios" in combined_data:
-                    p = scenario_probability_chart(
-                        combined_data["scenarios"][:10],  # cap at 10 bars
-                        config.REPORTS_DIR / "chart_scenarios.png",
-                        title=combined_data.get("scenario_title", "Scenario Probability Distribution"),
-                    )
-                    if p: chart_paths.append(p)
-                if "market_impacts" in combined_data:
-                    p = market_impact_chart(
-                        combined_data["market_impacts"][:12],
-                        config.REPORTS_DIR / "chart_market_impact.png",
-                        title=combined_data.get("market_title", "Estimated Market Impact by Asset Class"),
-                    )
-                    if p: chart_paths.append(p)
-                if "timeline" in combined_data:
-                    p = timeline_chart(
-                        combined_data["timeline"][:12],
-                        config.REPORTS_DIR / "chart_timeline.png",
-                        title=combined_data.get("timeline_title", "Event Timeline"),
-                    )
-                    if p: chart_paths.append(p)
-                logger.info(f"[reporter] Generated {len(chart_paths)} chart(s)")
+                combined_data = self._collect_chart_data(summary)
+                chart_paths = self._generate_charts(combined_data)
             except Exception as e:
                 logger.warning(f"[reporter] Chart generation failed (non-fatal): {e}")
 
-        # Export to LaTeX PDF (skip in fast mode)
+        # Build chart-enriched markdown for PDF
+        enriched_md = self._inject_charts_into_markdown(summary, chart_paths) if chart_paths else summary
+        report_path = self.write_report("Executive Summary", enriched_md)
+
+        # Export notebook (primary deliverable — charts inline, code hidden)
+        nb_path: Path | None = None
+        if not dry_run and chart_paths:
+            nb_path = self._export_notebook(summary, chart_paths, report_path)
+
+        # Export PDF from chart-enriched markdown
         pdf_path: Path | None = None
         if not dry_run and config.PDF_EXPORT_ENABLED and not config.FAST_MODE:
-            try:
-                from agentorg.reporting.generator import ReportGenerator
-                gen = ReportGenerator()
-                pdf_path = gen.export_to_pdf(report_path)
-                if pdf_path:
-                    logger.info(f"[reporter] PDF ready: {pdf_path.name}")
-            except Exception as e:
-                logger.warning(f"[reporter] PDF export failed (non-fatal): {e}")
+            pdf_path = self._export_pdf(report_path, chart_paths)
 
-        # Post to Slack — brief message + charts + PDF attachment
+        # Post to Slack
         if config.SLACK_BOT_TOKEN and config.SLACK_EXECUTIVE_CHANNEL_ID and not dry_run:
             try:
                 from agentorg.slack_bot.client import SlackClient
                 slack = SlackClient()
 
-                cycle_date = report_path.stem.split("_")[0]  # YYYYMMDD
+                cycle_date = report_path.stem.split("_")[0]
                 slack.post_message(
                     channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
                     text=f"*Research Report — {cycle_date}*\n\n{brief}",
                 )
 
-                # Upload any generated charts
-                for i, chart_path in enumerate(chart_paths):
-                    try:
-                        slack.upload_file(
-                            channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
-                            file_path=str(chart_path),
-                            title=chart_path.stem.replace("_", " ").title(),
-                            initial_comment="" if i > 0 else "Charts from this cycle:",
-                        )
-                    except Exception as e:
-                        logger.warning(f"[reporter] Chart upload failed (non-fatal): {e}")
+                # Upload notebook first (best format — charts inline, self-contained)
+                if nb_path:
+                    slack.upload_file(
+                        channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
+                        file_path=str(nb_path),
+                        title=f"Research Report — {cycle_date} (Notebook)",
+                        initial_comment="Full report with inline charts attached (open in Jupyter or VS Code).",
+                    )
 
-                # Upload the PDF (preferred) or fall back to Markdown
-                file_to_upload = str(pdf_path) if pdf_path else str(report_path)
-                file_title = f"Executive Summary — {cycle_date}"
-                slack.upload_file(
-                    channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
-                    file_path=file_to_upload,
-                    title=file_title,
-                    initial_comment="Full report attached.",
-                )
-                logger.info("[reporter] Slack post + charts + file upload complete.")
+                # Upload PDF if available
+                if pdf_path:
+                    slack.upload_file(
+                        channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
+                        file_path=str(pdf_path),
+                        title=f"Research Report — {cycle_date} (PDF)",
+                        initial_comment="PDF version attached." if nb_path else "Full report attached.",
+                    )
+                elif not nb_path:
+                    # Fallback to markdown if neither notebook nor PDF
+                    slack.upload_file(
+                        channel=config.SLACK_EXECUTIVE_CHANNEL_ID,
+                        file_path=str(report_path),
+                        title=f"Executive Summary — {cycle_date}",
+                        initial_comment="Full report attached.",
+                    )
+
+                logger.info("[reporter] Slack delivery complete.")
             except Exception as e:
                 logger.error(f"[reporter] Slack error (non-fatal): {e}")
 
-        return {"status": "ok", "report": str(report_path), "pdf": str(pdf_path) if pdf_path else None}
+        self.post_slack_progress("✅", "done", brief)
+        return {
+            "status": "ok",
+            "report": str(report_path),
+            "notebook": str(nb_path) if nb_path else None,
+            "pdf": str(pdf_path) if pdf_path else None,
+        }
 
 
 def main(dry_run: bool = False) -> None:
