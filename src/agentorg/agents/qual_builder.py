@@ -209,6 +209,17 @@ class QualBuilderAgent:
             "5. End your response with a `## Questions for Quant` section if you have data questions.\n"
             "   Format: 'Check [asset/metric] around [date/period] — I'm seeing [event] that should show up.'\n"
             "6. After your prose, append a machine-readable ```evidence_json block.\n"
+            "\n## Discipline Rules — READ CAREFULLY\n"
+            "- **Stay on brief.** Every section, finding, and claim must be directly relevant to the "
+            "research brief above. Do not let tangential search results (e.g., unrelated geopolitical "
+            "conflicts, foreign policy events, or news from other domains) dominate or frame your analysis "
+            "unless the brief specifically asks for geopolitical context.\n"
+            "- **No copy-paste across sections.** Each section must contain unique analysis. Never repeat "
+            "the same sentence, data point, or framing in multiple sections or charts.\n"
+            "- **Name names.** Generic statements ('regulators are increasing scrutiny', 'markets reacted') "
+            "are not acceptable. Name the specific regulator, rule, company, fund, or event.\n"
+            "- **Use the most current data available.** Prefer 2025-2026 sources. Flag if a figure is from "
+            "a projection or earlier year.\n"
         )
 
         if agenda_items:
