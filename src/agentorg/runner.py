@@ -67,7 +67,13 @@ def _run_project_cycle(
         brief=brief,
         limit=config.MEMORY_RETRIEVAL_LIMIT,
     )
-    agenda_seed = goals or ["Produce a defensible synthesis with claims, sources, and charts."]
+    # Default agenda seeds: always include at least one qual item and one quant item
+    # so both agents have work in cycle 1. If no explicit goals from PLAN.md, use
+    # generic seeds that reliably route to qual vs quant via keyword classification.
+    agenda_seed = goals or [
+        "Investigate the geopolitical context, policy responses, and key actors relevant to this research brief.",
+        "Fetch market and economic data, produce charts, and quantify the financial and statistical claims.",
+    ]
     seeded_questions = memory_seed_questions(related_memories)
     existing_questions = {question.strip().lower() for question in agenda_seed}
     for question in seeded_questions:
