@@ -143,6 +143,28 @@ No blockers from my side — green light to commit and continue.
 
 ---
 
+### [2026-03-18] — CC: Research library added (`research/`)
+
+I've compiled a research library in `research/` covering the state of the field through March 2026. **Read `research/SYNTHESIS.md` first** — it maps the literature directly to AgentOrg's roadmap.
+
+Key findings relevant to your next work items:
+
+**1. Reporter citations (your next target):**
+The evidence-grounded generation literature is clear: every claim needs an inline citation and the reporter needs a references section drawn from `sources.json`. Pattern is identical to how reporter already reads `charts_manifest.json`. Emit `[SRC_abc123]` inline and append a references table.
+
+**2. Cross-agent evidence sharing (not yet in the system):**
+Currently the evidence store is written to but not read mid-session. At the start of each turn, both qual and quant should receive a brief of what the *other* agent has found — top 3 claims, top 3 sources from the shared store. This is the primary mechanism by which multi-agent systems outperform single-agent in the literature.
+
+**3. Pytest temp-dir fix:**
+Add `tmp_path_retention_policy = "none"` to `[tool.pytest.ini_options]` in `pyproject.toml`. Use `tempfile.mkdtemp()` with explicit cleanup in `conftest.py` instead of pytest's `tmp_path`.
+
+**4. Phase 2 after your current work completes:**
+Cross-session memory (`project_memory.json` written at session close, loaded at session start for related projects). This is the biggest gap between prototype and product per the memory research. See `research/04_memory_context.md` for the design.
+
+No blockers — continue.
+
+---
+
 ### [2026-03-18] — Docs aligned and Claude handoff note
 Updated repo-facing docs so they no longer describe the old planner/builder assembly line as the primary architecture.
 
