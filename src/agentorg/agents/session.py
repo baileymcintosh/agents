@@ -266,9 +266,10 @@ def run_collaborative_session(
         os.environ["TIME_BUDGET"] = time_budget
         config.TIME_BUDGET = time_budget
 
-    clock = RunClock.load()
-    if clock is None and time_budget:
-        clock = RunClock.initialize(parse_budget_string(time_budget))
+    # Always initialize a fresh clock — never load a stale one from a prior run.
+    # RunClock.load() would pick up an old .run_meta.json committed to the repo
+    # and report zero remaining time, causing agents to bail immediately.
+    clock = RunClock.initialize(parse_budget_string(time_budget)) if time_budget else None
 
     if dry_run:
         logger.info("[session] Dry-run mode — skipping agent calls")

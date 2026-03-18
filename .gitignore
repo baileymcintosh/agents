@@ -34,6 +34,10 @@ tmp*/
 reports/_test_tmp/
 _state/
 
+# Runtime clock metadata — never commit, stale files cause instant time-budget exhaustion
+.run_meta.json
+reports/.run_meta.json
+
 # Type checking
 .mypy_cache/
 .ruff_cache/
