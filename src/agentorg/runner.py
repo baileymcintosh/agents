@@ -30,11 +30,35 @@ from agentorg.memory import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Model routing — override any of these via environment variables to swap
+# models without changing code. Defaults are set for cost efficiency.
+#
+# Quick reference (approx cost per 1M tokens in/out):
+#   claude-opus-4-6              $15 / $75   — highest quality, use sparingly
+#   claude-sonnet-4-6            $3  / $15   — good balance
+#   claude-haiku-4-5-20251001    $0.80/ $4   — fast + cheap, fine for data tasks
+#   gpt-4o                       $2.50/$10   — strong for qual research
+#   gpt-4o-mini                  $0.15/$0.60 — 17x cheaper than gpt-4o
+#   llama-3.3-70b-versatile      free        — Groq free tier (rate limited)
+# ---------------------------------------------------------------------------
+
+# Prelim — all cheap: qual+verifier+reporter on Groq (free), quant on Haiku
 PRELIM_MODEL_OVERRIDES: dict[str, Any] = {
-    "QUAL_BUILDER_MODEL": config.PRELIM_MODEL,
-    "VERIFIER_MODEL": config.PRELIM_MODEL,
-    "REPORTER_MODEL": config.PRELIM_MODEL,
+    "QUAL_BUILDER_MODEL": os.getenv("PRELIM_QUAL_MODEL", config.PRELIM_MODEL),
+    "QUANT_BUILDER_MODEL": os.getenv("PRELIM_QUANT_MODEL", "claude-haiku-4-5-20251001"),
+    "VERIFIER_MODEL": os.getenv("PRELIM_VERIFIER_MODEL", config.PRELIM_MODEL),
+    "REPORTER_MODEL": os.getenv("PRELIM_REPORTER_MODEL", config.PRELIM_MODEL),
     "FAST_MODE": True,
+}
+
+# Deep — quality tier: quant on Haiku, qual on gpt-4o-mini, verifier on Groq,
+# reporter on Sonnet for final synthesis quality
+DEEP_MODEL_OVERRIDES: dict[str, Any] = {
+    "QUAL_BUILDER_MODEL": os.getenv("DEEP_QUAL_MODEL", "gpt-4o-mini"),
+    "QUANT_BUILDER_MODEL": os.getenv("DEEP_QUANT_MODEL", "claude-haiku-4-5-20251001"),
+    "VERIFIER_MODEL": os.getenv("DEEP_VERIFIER_MODEL", config.PRELIM_MODEL),
+    "REPORTER_MODEL": os.getenv("DEEP_REPORTER_MODEL", config.REPORTER_MODEL),
 }
 
 
@@ -272,6 +296,7 @@ def _project_runtime(
         "FAST_MODE": config.FAST_MODE,
         "TIME_BUDGET": config.TIME_BUDGET,
         "QUAL_BUILDER_MODEL": config.QUAL_BUILDER_MODEL,
+        "QUANT_BUILDER_MODEL": config.QUANT_BUILDER_MODEL,
         "VERIFIER_MODEL": config.VERIFIER_MODEL,
         "REPORTER_MODEL": config.REPORTER_MODEL,
     }
@@ -279,10 +304,15 @@ def _project_runtime(
     config.TIME_BUDGET = time_budget
     if mode == "prelim":
         config.QUAL_BUILDER_MODEL = PRELIM_MODEL_OVERRIDES["QUAL_BUILDER_MODEL"]
+        config.QUANT_BUILDER_MODEL = PRELIM_MODEL_OVERRIDES["QUANT_BUILDER_MODEL"]
         config.VERIFIER_MODEL = PRELIM_MODEL_OVERRIDES["VERIFIER_MODEL"]
         config.REPORTER_MODEL = PRELIM_MODEL_OVERRIDES["REPORTER_MODEL"]
         config.FAST_MODE = PRELIM_MODEL_OVERRIDES["FAST_MODE"]
     else:
+        config.QUAL_BUILDER_MODEL = DEEP_MODEL_OVERRIDES["QUAL_BUILDER_MODEL"]
+        config.QUANT_BUILDER_MODEL = DEEP_MODEL_OVERRIDES["QUANT_BUILDER_MODEL"]
+        config.VERIFIER_MODEL = DEEP_MODEL_OVERRIDES["VERIFIER_MODEL"]
+        config.REPORTER_MODEL = DEEP_MODEL_OVERRIDES["REPORTER_MODEL"]
         config.FAST_MODE = False
 
     # Clear evidence state so each run starts with a clean slate.
@@ -298,6 +328,7 @@ def _project_runtime(
         config.FAST_MODE = previous["FAST_MODE"]
         config.TIME_BUDGET = previous["TIME_BUDGET"]
         config.QUAL_BUILDER_MODEL = previous["QUAL_BUILDER_MODEL"]
+        config.QUANT_BUILDER_MODEL = previous["QUANT_BUILDER_MODEL"]
         config.VERIFIER_MODEL = previous["VERIFIER_MODEL"]
         config.REPORTER_MODEL = previous["REPORTER_MODEL"]
 

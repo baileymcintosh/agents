@@ -15,6 +15,18 @@ on:
         description: "Override repo name (optional — if omitted, auto-appends run number to project_name)"
         required: false
         type: string
+      deep_quant_model:
+        description: "Quant builder model (default: claude-haiku-4-5-20251001)"
+        required: false
+        type: string
+      deep_qual_model:
+        description: "Qual builder model (default: gpt-4o-mini)"
+        required: false
+        type: string
+      deep_reporter_model:
+        description: "Reporter model (default: claude-sonnet-4-6)"
+        required: false
+        type: string
 
 env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -26,6 +38,9 @@ env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   AGENTORG_PROJECTS_ROOT: /tmp/projects
   AGENTORG_CREATE_GITHUB_REPO: "false"
+  DEEP_QUANT_MODEL: ${{ github.event.inputs.deep_quant_model || 'claude-haiku-4-5-20251001' }}
+  DEEP_QUAL_MODEL: ${{ github.event.inputs.deep_qual_model || 'gpt-4o-mini' }}
+  DEEP_REPORTER_MODEL: ${{ github.event.inputs.deep_reporter_model || 'claude-sonnet-4-6' }}
 
 jobs:
   deep:

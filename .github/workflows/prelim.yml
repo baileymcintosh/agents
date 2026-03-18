@@ -15,6 +15,18 @@ on:
         description: "Override repo name (optional — use to continue work in an existing repo)"
         required: false
         type: string
+      prelim_quant_model:
+        description: "Quant builder model (default: claude-haiku-4-5-20251001)"
+        required: false
+        type: string
+      prelim_qual_model:
+        description: "Qual builder model (default: llama-3.3-70b-versatile / Groq)"
+        required: false
+        type: string
+      prelim_reporter_model:
+        description: "Reporter model (default: llama-3.3-70b-versatile / Groq)"
+        required: false
+        type: string
 
 env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -26,6 +38,9 @@ env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   AGENTORG_PROJECTS_ROOT: /tmp/projects
   AGENTORG_CREATE_GITHUB_REPO: "false"
+  PRELIM_QUANT_MODEL: ${{ github.event.inputs.prelim_quant_model || 'claude-haiku-4-5-20251001' }}
+  PRELIM_QUAL_MODEL: ${{ github.event.inputs.prelim_qual_model || 'llama-3.3-70b-versatile' }}
+  PRELIM_REPORTER_MODEL: ${{ github.event.inputs.prelim_reporter_model || 'llama-3.3-70b-versatile' }}
 
 jobs:
   prelim:

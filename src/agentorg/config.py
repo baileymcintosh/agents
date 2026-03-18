@@ -20,9 +20,9 @@ AGENT_MODEL: str = os.getenv("AGENT_MODEL", "claude-sonnet-4-6")
 AGENT_MAX_TOKENS: int = int(os.getenv("AGENT_MAX_TOKENS", "8000"))
 
 # Per-role model overrides
-# Tier 1 — expensive, used sparingly: planner + debugger only
-PLANNER_MODEL: str = os.getenv("PLANNER_MODEL", "claude-opus-4-6")
-DEBUGGER_MODEL: str = os.getenv("DEBUGGER_MODEL", "claude-opus-4-6")
+# Tier 1 — mid-tier default; override via env to use Opus for critical tasks
+PLANNER_MODEL: str = os.getenv("PLANNER_MODEL", "claude-sonnet-4-6")
+DEBUGGER_MODEL: str = os.getenv("DEBUGGER_MODEL", "claude-sonnet-4-6")
 # Tier 2 — mid-tier: deep research synthesis
 BUILDER_MODEL: str = os.getenv("BUILDER_MODEL", "claude-sonnet-4-6")
 VERIFIER_MODEL: str = os.getenv("VERIFIER_MODEL", "claude-sonnet-4-6")
