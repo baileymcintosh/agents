@@ -382,14 +382,14 @@ class ReporterAgent(BaseAgent):
                 "scenarios": ["## scenario"],
                 "market_impacts": ["## financial", "## market"],
             }
-            remaining = dict(chart_paths)
+            remaining = dict(chart_paths)  # keys: "timeline", "scenarios", "market_impacts"
             lines = cited_summary.split("\n")
             out = []
             for line in lines:
                 out.append(line)
                 ll = line.lower()
-                for key, keywords in list(remaining.items()):
-                    if any(ll.startswith(kw) for kw in keywords):
+                for key, keywords in list(triggers.items()):
+                    if key in remaining and any(ll.startswith(kw) for kw in keywords):
                         p = chart_paths[key]
                         out.append(f"\n![{p.stem.replace('_', ' ').title()}]({p})\n")
                         remaining.pop(key)
