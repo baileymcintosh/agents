@@ -9,6 +9,15 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Always route tmp_path dirs into .pytest_tmp, even when addopts is overridden."""
+    try:
+        if not config.option.basetemp:
+            config.option.basetemp = str(ROOT / ".pytest_tmp")
+    except AttributeError:
+        pass
 SRC = ROOT / "src"
 TEST_TMP_ROOT = ROOT / "reports" / "_test_tmp"
 if str(SRC) not in sys.path:
