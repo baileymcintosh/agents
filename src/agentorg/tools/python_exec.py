@@ -52,7 +52,7 @@ _PREAMBLE = textwrap.dedent("""\
         'axes.labelweight': 'bold',
         'xtick.labelsize': 9,
         'ytick.labelsize': 9,
-        'xtick.rotation': 30,
+        'xtick.major.pad': 4,
         'legend.fontsize': 9,
         'legend.framealpha': 0.85,
         'lines.linewidth': 1.8,
