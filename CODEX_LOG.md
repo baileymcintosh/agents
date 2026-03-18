@@ -165,6 +165,166 @@ No blockers — continue.
 
 ---
 
+### [2026-03-18] — CC: Two new agents to implement — Critic + QA Editor
+
+Two new agents have been approved. Spec below. Both are grounded in the `research/` library — see `01_foundational_patterns.md` (reflection pattern) and `05_evaluation_benchmarks.md` (failure mode taxonomy).
+
+---
+
+#### Agent 1: `CriticAgent` (mid-session adversarial challenger)
+
+**What it does:** Runs once during the collaborative session, after both qual and quant have completed their first turn. Reads the current evidence store and challenges the work — logical gaps, claim-evidence mismatches, qual/quant contradictions, missing counterarguments. Outputs structured agenda items (not a report), which qual and quant must address in their remaining turns.
+
+**Literature basis:** Ng's reflection pattern (two agents: one generates, one critiques — dialogue between them improves outputs substantially). "Multi-Agent Collaboration Mechanisms" survey: cross-agent critique is the primary driver of quality improvement over isolated parallel agents. Critic must run while there is still time to course-correct — not after the session closes.
+
+**Where it sits in `session.py`:**
+
+Use a `threading.Barrier(2)` pattern. After each agent completes turn 1, it signals the barrier. Once both have signalled, the main session thread runs `CriticAgent` synchronously before releasing both worker threads to continue. This is the cleanest way to guarantee the critic sees both agents' first outputs before either proceeds to turn 2.
+
+Pseudocode:
+```python
+# In CollaborativeSession.run():
+self._turn1_barrier = threading.Barrier(3)  # qual + quant + critic
+
+# In _run_qual_loop: after turn 1 completes, call self._turn1_barrier.wait()
+# In _run_quant_loop: after turn 1 completes, call self._turn1_barrier.wait()
+# In run(): launch critic thread that calls barrier.wait() then runs CriticAgent
+```
+
+**`CriticAgent` class spec (`src/agentorg/agents/critic.py`):**
+
+- Inherits from `BaseAgent`, `role = "critic"`
+- `__init__`: takes `evidence: EvidenceStore`, `research_plan: str`
+- `run()` method:
+  1. Load current `claims`, `sources`, and qual/quant turn-1 report files from `reports_dir`
+  2. Build a prompt containing: research plan, all current claims (statement + agent_role + confidence), top sources by tier, and the raw turn-1 report text from both agents
+  3. Single LLM call (Sonnet) with system prompt below
+  4. Parse response for a structured list of challenges
+  5. Write each challenge as a high-priority agenda item via `evidence.add_agenda_items()`
+  6. Log how many challenges were added; return count
+
+**Critic system prompt (key instructions):**
+```
+You are a rigorous intellectual critic reviewing preliminary research findings.
+Your job is NOT to summarise — it is to identify weaknesses.
+
+Look for:
+1. Claims that assert more than the evidence supports
+2. Contradictions between the qual and quant findings
+3. Important counterarguments or alternative interpretations not addressed
+4. Gaps: significant questions the brief implies but no agent has addressed
+5. Confirmation bias: sources selected only from one perspective
+
+Output a JSON array of challenges. Each challenge:
+{
+  "question": "Specific question or challenge the agents must address",
+  "owner": "qual" | "quant" | "shared",
+  "priority": "high",
+  "note": "Why this matters / what evidence it's based on"
+}
+
+Be specific. "Address the counterargument that X implies Y" not "improve coverage."
+Max 5 challenges. Prioritise ruthlessly.
+```
+
+**Skip condition:** If `evidence.claims()` is empty (agents haven't produced structured claims yet), log a warning and skip rather than failing.
+
+**Does NOT run in prelim mode** (`mode == "prelim"` → skip critic to keep prelim fast). Only runs in deep mode.
+
+---
+
+#### Agent 2: `QAEditorAgent` (post-reporter output quality check)
+
+**What it does:** Runs after the reporter produces its final output. Reviews the report against the original brief and a structured rubric. If it fails any dimension, sends specific revision instructions back to the reporter for one correction pass. Then publishes regardless of the second pass result (no infinite loops).
+
+**Literature basis:** Execution-based evaluation (check actual outputs against observable criteria, not just ask the model if it did well). The QA agent must have the original brief — reflection without grounding fails (research/01). Revision instructions must be specific and actionable, not vague (Ng: concrete feedback is what makes the reflection pattern work).
+
+**Where it sits in `runner.py`:**
+
+```python
+# After reporter runs:
+reporter_result = ReporterAgent().run(dry_run=False)
+
+qa_result = QAEditorAgent(brief=brief, research_plan=research_plan).run(
+    report_path=reporter_result.get("report"),
+    dry_run=False,
+)
+if qa_result.get("verdict") == "REVISE":
+    logger.info("[runner] QA editor requested revision — running reporter once more")
+    reporter_result = ReporterAgent().run(
+        revision_instructions=qa_result.get("instructions"), dry_run=False
+    )
+# Then push regardless
+```
+
+**`QAEditorAgent` class spec (`src/agentorg/agents/qa_editor.py`):**
+
+- Inherits from `BaseAgent`, `role = "qa_editor"`
+- `__init__`: takes `brief: str`, `research_plan: str`
+- `run(report_path: str, dry_run: bool)`:
+  1. Read the report markdown from `report_path`
+  2. Read `charts_manifest.json` (list of chart filenames + descriptions)
+  3. Read `claims.json` (list of core claims)
+  4. Read `agenda.json` (check for unresolved high-priority items)
+  5. Single LLM call (Sonnet) with rubric prompt below
+  6. Parse response for verdict (`APPROVED` / `REVISE`) and specific instructions
+  7. Write a short QA report file (`{timestamp}_qa_editor.md`) to reports_dir
+  8. Return `{"verdict": ..., "instructions": ..., "report": ...}`
+
+**QA Editor system prompt (key instructions):**
+```
+You are a rigorous editor reviewing a research report before publication.
+You have: the original brief, the finished report, the list of charts produced,
+the list of verified claims, and any unresolved research questions.
+
+Score each dimension PASS or FAIL with a one-line reason:
+
+1. CHART COVERAGE: Every chart in the manifest is referenced and explained in the report narrative.
+2. CLAIM-NARRATIVE ALIGNMENT: The report's conclusions reflect the claims in claims.json. No major verified claim is absent from the narrative.
+3. BRIEF COMPLETENESS: The report answers what the brief asked. No major question from the brief is unaddressed.
+4. FORMATTING: Consistent headers, no broken markdown, tables render correctly, section flow is logical.
+5. EXECUTIVE ACCESSIBILITY: A smart non-specialist can read the executive summary and understand the key finding and its implications.
+
+If ALL five pass: output {"verdict": "APPROVED"}.
+
+If ANY fail: output {
+  "verdict": "REVISE",
+  "instructions": "Numbered list of specific fixes. 'Add a paragraph explaining chart_quant_X.' not 'Improve charts.'"
+}
+
+Be ruthless but specific. Vague feedback is useless.
+```
+
+**Reporter must accept `revision_instructions`:** Add an optional `revision_instructions: str = ""` parameter to `ReporterAgent.run()`. If provided, prepend it to the reporter's system prompt as: "REVISION REQUIRED. Fix the following before writing: {instructions}". The reporter then rewrites the report incorporating the fixes.
+
+---
+
+#### Updated pipeline (what `runner.py` looks like end-to-end after this):
+
+```
+planner artifacts
+  → collaborative session
+      [qual turn 1] [quant turn 1]
+      → critic checkpoint (deep mode only)
+      → critic agenda items added
+      [qual turns 2-N] [quant turns 2-N]
+  → verifier (claim-level provenance check)
+  → reporter (synthesises report + notebook + charts)
+  → QA editor (rubric check → optional 1 revision pass)
+  → git push
+  → notify user
+```
+
+**No new external dependencies needed.** Both agents use the existing `BaseAgent` / LLM call infrastructure, `EvidenceStore`, and `BaseAgent.write_report()`.
+
+**Tests to add:**
+- `tests/test_critic.py`: smoke test that `CriticAgent.run()` with an empty evidence store skips gracefully; with populated claims returns agenda items
+- `tests/test_qa_editor.py`: smoke test that `QAEditorAgent.run()` with a minimal report returns either APPROVED or REVISE with instructions
+
+Green light — no blockers from CC side.
+
+---
+
 ### [2026-03-18] — Docs aligned and Claude handoff note
 Updated repo-facing docs so they no longer describe the old planner/builder assembly line as the primary architecture.
 
