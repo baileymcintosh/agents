@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - minimal test environment fallback
 from agentorg import config
 from agentorg.evidence import extract_json_block
 from agentorg.messaging import AgentMessage, AgentMessenger
-from agentorg.tools.search import web_search, format_search_results
+from agentorg.tools.search import fetch_url, format_search_results, web_search
 
 
 # OpenAI tool definition for web search
@@ -37,15 +37,37 @@ _SEARCH_TOOL: dict[str, Any] = {
         "description": (
             "Search the web for current news, analysis, official statements, and reports. "
             "Use multiple targeted queries. Prefer primary sources: Reuters, Bloomberg, "
-            "AP, official government/central bank statements, think tanks (IISS, CFR, Brookings)."
+            "AP, official government/central bank statements, think tanks (IISS, CFR, Brookings). "
+            "Returns titles and snippets — use fetch_url to read the full article content."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
-                "max_results": {"type": "integer", "description": "Number of results (default 8)", "default": 8},
+                "max_results": {"type": "integer", "description": "Number of results (default 6)", "default": 6},
             },
             "required": ["query"],
+        },
+    },
+}
+
+# OpenAI tool definition for full-article fetching via Jina Reader
+_FETCH_URL_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "fetch_url",
+        "description": (
+            "Fetch the FULL text content of a URL as clean markdown. "
+            "Use this after web_search to read complete articles, reports, or official documents "
+            "rather than just their snippets. Essential for primary source analysis. "
+            "Call this on the 2-3 most relevant URLs from each search."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The URL to fetch"},
+            },
+            "required": ["url"],
         },
     },
 }
@@ -69,7 +91,7 @@ class QualBuilderAgent:
         self.reports_dir = config.REPORTS_DIR
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self.system_prompt = self._load_system_prompt()
-        self.use_search = bool(config.TAVILY_API_KEY)
+        self.use_search = True  # always enabled; falls back to DuckDuckGo if Tavily quota exceeded
         self._all_findings: list[str] = []
 
     def _is_groq_model(self) -> bool:
@@ -89,10 +111,12 @@ class QualBuilderAgent:
         )
 
     def call_openai(self, user_message: str, max_searches: int = 8) -> str:
-        """Run OpenAI with web search tool use loop."""
+        """Run OpenAI with web search + full-article fetch tool use loop."""
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
-        tools = [_SEARCH_TOOL] if self.use_search else []
+        tools = [_SEARCH_TOOL, _FETCH_URL_TOOL] if self.use_search else []
         search_count = 0
+        fetch_count = 0
+        max_fetches = max_searches  # allow as many fetches as searches
 
         logger.info(f"[qual] → OpenAI ({self.model})")
 
@@ -137,11 +161,20 @@ class QualBuilderAgent:
                         else:
                             args = json.loads(tc.function.arguments)
                             query = args.get("query", "")
-                            n = args.get("max_results", 8)
+                            n = args.get("max_results", 6)
                             logger.info(f"[qual] Web search ({search_count + 1}/{max_searches}): '{query}'")
                             results = web_search(query, max_results=n)
                             result = format_search_results(results)
                             search_count += 1
+                    elif tc.function.name == "fetch_url":
+                        if fetch_count >= max_fetches:
+                            result = "Fetch limit reached. Synthesize what you have."
+                        else:
+                            args = json.loads(tc.function.arguments)
+                            url = args.get("url", "")
+                            logger.info(f"[qual] Fetching full article ({fetch_count + 1}): {url}")
+                            result = fetch_url(url)
+                            fetch_count += 1
                     else:
                         result = f"Unknown tool: {tc.function.name}"
 

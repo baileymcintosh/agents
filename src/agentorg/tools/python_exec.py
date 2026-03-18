@@ -76,6 +76,20 @@ _PREAMBLE = textwrap.dedent("""\
     REPORTS_DIR = os.getenv('REPORTS_DIR', 'reports')
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
+    # fetch_url(url) — read the full content of any URL as clean markdown (via Jina Reader)
+    # Use this to pull full reports, filings, articles that yfinance/FRED don't cover.
+    def fetch_url(url, max_chars=12000):
+        try:
+            import httpx as _httpx
+            resp = _httpx.get(f'https://r.jina.ai/{url}',
+                headers={'Accept': 'text/plain', 'X-Return-Format': 'markdown'},
+                timeout=30.0, follow_redirects=True)
+            resp.raise_for_status()
+            content = resp.text.strip()
+            return content[:max_chars] if len(content) > max_chars else content
+        except Exception as e:
+            return f'fetch_url failed: {e}'
+
     _chart_counter = [0]
     _saved_charts = []
 

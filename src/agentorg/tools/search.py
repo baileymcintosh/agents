@@ -116,6 +116,41 @@ def web_search(query: str, max_results: int = 8, search_depth: str = "advanced")
     return []
 
 
+def fetch_url(url: str, max_chars: int = 12000) -> str:
+    """
+    Fetch the full text content of a URL using Jina Reader (r.jina.ai).
+
+    Jina converts any webpage to clean markdown — no API key required.
+    Use this after web_search to read full articles instead of just snippets.
+
+    Args:
+        url: The URL to fetch
+        max_chars: Maximum characters to return (default 12000 ≈ ~3000 tokens)
+
+    Returns:
+        Full article text as markdown, or an error message.
+    """
+    if not url or not url.startswith("http"):
+        return f"Invalid URL: {url}"
+    try:
+        jina_url = f"https://r.jina.ai/{url}"
+        resp = httpx.get(
+            jina_url,
+            headers={"Accept": "text/plain", "X-Return-Format": "markdown"},
+            timeout=30.0,
+            follow_redirects=True,
+        )
+        resp.raise_for_status()
+        content = resp.text.strip()
+        if len(content) > max_chars:
+            content = content[:max_chars] + f"\n\n[... content truncated at {max_chars} chars ...]"
+        logger.info(f"[search] fetch_url '{url}' → {len(content)} chars")
+        return content
+    except Exception as e:
+        logger.warning(f"[search] fetch_url failed for '{url}': {e}")
+        return f"Could not fetch content from {url}: {e}"
+
+
 def format_search_results(results: list[dict[str, Any]]) -> str:
     """Format search results into a readable string for inclusion in agent prompts."""
     if not results:
