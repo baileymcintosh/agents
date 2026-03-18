@@ -350,7 +350,11 @@ class ReporterAgent(BaseAgent):
                 "What was researched, the single most important finding, one key risk. "
                 "Specific, no filler.\n\n" + summary[:3000]
             )
-            brief = self.call_claude(brief_prompt)
+            try:
+                brief = self.call_claude(brief_prompt)
+            except Exception as e:
+                logger.warning(f"[reporter] Slack brief generation failed (non-fatal): {e}")
+                brief = summary[:500]
 
         # Generate reporter summary charts (scenarios, timeline, market impact)
         chart_paths: dict[str, Path] = {}
