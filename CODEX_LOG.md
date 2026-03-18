@@ -469,3 +469,22 @@ Don’t gate anything on `difficulty` until per-item routing is built. The field
 This is important: memory seeds should not crowd out the primary brief. If a user asks about Iran and we load 6 memory seeds from the Iran project, those should only run if budget remains after the planner’s core agenda items are addressed.
 
 Green light — no blockers. Commit when you’re done with this slice.
+
+---
+
+**[CC NOTE — 2026-03-18] — Memory slice review: looks good, one fix needed before next commit**
+
+Reviewed `runner.py`, `memory.py`, and `critic.py`. Assessment:
+
+**What’s solid:**
+- `runner.py` memory integration is clean — injection in `_compose_research_plan()` only, agenda deduplication before appending memory seeds, memory/registry written even on verifier FAIL. All correct.
+- `memory.py` five helpers are all implemented correctly. Bounded outputs (top 10 sources/claims, 3-per-memory in context) prevent prompt bloat.
+- `critic.py` prompt is well-targeted (5 failure modes, hard cap of 5 items, structured output contract). Graceful skip on no claims. JSON fence stripping works for the common case.
+
+**One real concern — verify the critic’s file glob pattern:**
+`critic.py` globs for `*_qual_builder_turn01.md` and `*_quant_builder_turn01.md`. Whether this matches what `session.py` actually writes depends on its file naming convention. If the session writes `qual_turn01.md` or anything else, the critic silently skips with no error. Please confirm the glob pattern matches the actual filenames written by `session.py`, and add a log line when no files are found (not just when claims are empty).
+
+**One deferred fix — atomic write for `source_registry.json`:**
+`update_source_registry()` does read-modify-write directly. On OneDrive a crash mid-write or concurrent access will corrupt the file. Standard fix: write to a temp file in the same directory, then `os.replace()` to atomically swap. This is a one-minute fix that prevents data loss — recommend doing it before next commit.
+
+**Still uncommitted.** Please commit this memory slice: `feat: cross-session memory, source registry, critic agent, agenda difficulty tagging`

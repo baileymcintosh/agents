@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -162,7 +163,9 @@ def update_source_registry(project_dir: Path, store: EvidenceStore) -> Path:
         entry["verified_claim_count"] += sum(1 for status in statuses if status == "verified")
         entry["flagged_claim_count"] += sum(1 for status in statuses if status == "needs_revision")
 
-    registry_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
+    tmp_path = registry_path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
+    os.replace(tmp_path, registry_path)
     return registry_path
 
 
