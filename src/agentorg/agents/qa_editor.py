@@ -44,6 +44,13 @@ class QAEditorAgent(BaseAgent):
         claims = [claim.to_dict() for claim in self.store.claims() if claim.status == "verified"]
         agenda = [item.to_dict() for item in self.store.agenda() if item.priority == "high" and item.status != "done"]
 
+        # In fast/prelim mode, truncate the report to avoid exceeding Groq's context limit.
+        # Groq's llama-3.3-70b-versatile has a ~32k token context; a full report with
+        # quant charts can exceed this. We send only the first portion of the report.
+        report_for_qa = report_text[:8000] if config.FAST_MODE else report_text
+        if config.FAST_MODE and len(report_text) > 8000:
+            report_for_qa += "\n\n[... report truncated for fast-mode QA review ...]"
+
         prompt = (
             "You are a rigorous editor reviewing a research report before publication.\n"
             "You have: the original brief, the finished report, the list of charts produced,\n"
@@ -58,11 +65,11 @@ class QAEditorAgent(BaseAgent):
             'If ANY fail: output {"verdict": "REVISE", "instructions": "Numbered list of specific fixes."}.\n'
             "Be ruthless but specific. Vague feedback is useless.\n\n"
             f"## Brief\n{self.brief}\n\n"
-            f"## Research Plan\n{self.research_plan}\n\n"
-            f"## Charts Manifest\n{json.dumps(charts_manifest, indent=2)}\n\n"
-            f"## Verified Claims\n{json.dumps(claims[:30], indent=2)}\n\n"
-            f"## Unresolved High-Priority Agenda\n{json.dumps(agenda[:20], indent=2)}\n\n"
-            f"## Report\n{report_text}"
+            f"## Research Plan\n{self.research_plan[:2000]}\n\n"
+            f"## Charts Manifest\n{json.dumps(charts_manifest[:20], indent=2)}\n\n"
+            f"## Verified Claims\n{json.dumps(claims[:20], indent=2)}\n\n"
+            f"## Unresolved High-Priority Agenda\n{json.dumps(agenda[:10], indent=2)}\n\n"
+            f"## Report\n{report_for_qa}"
         )
 
         if dry_run:

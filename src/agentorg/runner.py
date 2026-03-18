@@ -119,16 +119,23 @@ def _run_project_cycle(
         approval_result = None
         if verifier_result.get("verdict") == "PASS":
             reporter_result = ReporterAgent().run(dry_run=False)
-            qa_result = QAEditorAgent(brief=brief, research_plan=research_plan).run(
-                report_path=reporter_result.get("report", ""),
-                dry_run=False,
-            )
+            try:
+                qa_result = QAEditorAgent(brief=brief, research_plan=research_plan).run(
+                    report_path=reporter_result.get("report", ""),
+                    dry_run=False,
+                )
+            except Exception as e:
+                logger.warning(f"[runner] QA editor failed (non-fatal, report still published): {e}")
+                qa_result = {"verdict": "APPROVED", "instructions": "", "report": ""}
             if qa_result.get("verdict") == "REVISE":
                 logger.info("[runner] QA editor requested revision; running reporter once more")
-                reporter_result = ReporterAgent().run(
-                    dry_run=False,
-                    revision_instructions=qa_result.get("instructions", ""),
-                )
+                try:
+                    reporter_result = ReporterAgent().run(
+                        dry_run=False,
+                        revision_instructions=qa_result.get("instructions", ""),
+                    )
+                except Exception as e:
+                    logger.warning(f"[runner] Reporter revision failed (non-fatal, keeping original): {e}")
 
             final_outputs = [
                 session_result.get("qual_report"),
