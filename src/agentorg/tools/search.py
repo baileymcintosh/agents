@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import os
-import urllib.parse
 from typing import Any
+import urllib.parse
 
 import httpx
 try:
@@ -45,7 +45,6 @@ def _duckduckgo_search(query: str, max_results: int = 8) -> list[dict[str, Any]]
         # RelatedTopics
         for topic in data.get("RelatedTopics", [])[:max_results]:
             if isinstance(topic, dict) and topic.get("Text"):
-                icon = topic.get("Icon", {}) or {}
                 results.append({
                     "title": topic.get("Text", "")[:80],
                     "url": topic.get("FirstURL", ""),
