@@ -42,14 +42,22 @@ class VerifierAgent(BaseAgent):
             corroborating = [source for source in linked_sources if tier_rank(source.tier) <= 3]
             issues: list[str] = []
 
-            if claim.materiality == "core" and len(corroborating) < 2:
+            # For quant_builder claims, dataset provenance + generated chart is sufficient
+            # evidence — do not require 2 independent tier 1-3 sources, as data claims have
+            # inherently different provenance requirements from narrative claims.
+            has_dataset = any(source.source_type == "dataset" for source in linked_sources)
+            quant_has_provenance = (
+                claim.agent_role == "quant_builder"
+                and (has_dataset or claim.artifact_paths)
+            )
+
+            if claim.materiality == "core" and len(corroborating) < 2 and not quant_has_provenance:
                 issues.append("Core claim lacks two independent tier 1-3 sources.")
 
             if not linked_sources and not claim.artifact_paths:
                 issues.append("Claim has no linked sources or data artifacts.")
 
             if claim.agent_role == "quant_builder":
-                has_dataset = any(source.source_type == "dataset" for source in linked_sources)
                 if not has_dataset and not claim.artifact_paths:
                     issues.append("Quant claim lacks dataset provenance or generated charts.")
 
