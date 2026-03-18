@@ -164,6 +164,7 @@ class QualBuilderAgent:
         messenger: AgentMessenger,
         completed_sections: list[str],
         agenda_items: list[dict[str, str]],
+        partner_evidence_brief: str = "",
         clock_context: str = "",
     ) -> dict[str, Any]:
         """Execute one research turn and return prose plus a structured evidence payload."""
@@ -190,6 +191,12 @@ class QualBuilderAgent:
             prompt_parts.append(
                 f"\n{partner_context}\n\n"
                 "Address your partner's questions directly with sourced evidence before continuing your own research."
+            )
+
+        if partner_evidence_brief:
+            prompt_parts.append(
+                f"{partner_evidence_brief}\n\n"
+                "Use this shared evidence to avoid duplicating work and to challenge or extend your partner's findings."
             )
 
         prompt_parts.append(

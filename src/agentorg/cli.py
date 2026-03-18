@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib
+import getpass
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -11,6 +13,7 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 
 from agentorg import config
+from agentorg import approval as approval_state
 
 app = typer.Typer(
     name="agentorg",
@@ -18,7 +21,17 @@ app = typer.Typer(
 )
 console = Console()
 
-ROLES = ["planner", "builder", "verifier", "reporter", "debugger", "qual_builder", "quant_builder"]
+ROLES = [
+    "planner",
+    "builder",
+    "verifier",
+    "reporter",
+    "debugger",
+    "qual_builder",
+    "quant_builder",
+    "critic",
+    "qa_editor",
+]
 
 
 @app.command()
@@ -194,7 +207,8 @@ def status() -> None:
             f"[bold]{session.name}[/bold]\n"
             f"Phase: {session.phase} | Team: {', '.join(session.team)}\n"
             f"Last run: {session.last_run[:16].replace('T', ' ') if session.last_run else 'never'}\n"
-            f"Repo: {session.github_url or 'not created yet'}",
+            f"Repo: {session.github_url or 'not created yet'}\n"
+            f"Approval: {session.publication_approval_status or 'none'}",
             title="Active Session"
         ))
     else:
@@ -268,6 +282,56 @@ def session(
     )
     console.print(f"[green]Session complete[/green] — {result.get('messages', 0)} messages, "
                   f"{len(result.get('charts', []))} charts")
+
+
+@app.command()
+def approval() -> None:
+    """Inspect the latest publication approval artifact for the active session."""
+    from agentorg import session_state
+
+    session = session_state.load()
+    if not session:
+        console.print("[red]No active session.[/red]")
+        raise typer.Exit(1)
+
+    reports_dir = Path(session.project_dir) / "reports"
+    approval = approval_state.load(reports_dir)
+    if not approval:
+        console.print("[yellow]No publication approval artifact found.[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(Panel(Markdown(approval_state.render_markdown(approval)), title="Publication Approval"))
+
+
+@app.command()
+def approve(
+    notes: str = typer.Option("", "--notes", help="Optional approval notes"),
+    by: str = typer.Option("", "--by", help="Approver name"),
+) -> None:
+    """Mark the latest publication approval artifact as approved."""
+    from agentorg import session_state
+
+    session = session_state.load()
+    if not session:
+        console.print("[red]No active session.[/red]")
+        raise typer.Exit(1)
+
+    reports_dir = Path(session.project_dir) / "reports"
+    approver = by or getpass.getuser()
+    try:
+        approval = approval_state.approve(reports_dir, approved_by=approver, notes=notes)
+    except FileNotFoundError:
+        console.print("[red]No publication approval artifact found.[/red]")
+        raise typer.Exit(1)
+
+    session.publication_approval_required = approval.requires_approval
+    session.publication_approval_status = approval.status
+    session.publication_approval_run_id = approval.run_id
+    session.publication_approval_path = str(approval_state.approval_json_path(reports_dir))
+    session.publication_approval_updated_at = approval.updated_at
+    session_state.save(session)
+
+    console.print(Panel(Markdown(approval_state.render_markdown(approval)), title="Approved"))
 
 
 @app.command()

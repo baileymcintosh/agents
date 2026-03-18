@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
 
 from agentorg.agents.verifier import VerifierAgent
 from agentorg.evidence import EvidenceStore
 
 
-def test_verifier_fails_core_claim_without_corroboration(tmp_path: Path) -> None:
-    reports_dir = tmp_path / "reports"
+def test_verifier_fails_core_claim_without_corroboration(temp_dir) -> None:
+    reports_dir = temp_dir / "reports"
     reports_dir.mkdir()
     store = EvidenceStore(reports_dir)
     report_path = reports_dir / "qual.md"
@@ -40,7 +39,7 @@ def test_verifier_fails_core_claim_without_corroboration(tmp_path: Path) -> None
     )
 
     with patch("agentorg.config.REPORTS_DIR", reports_dir), \
-         patch("agentorg.config.AGENT_DOCS_DIR", tmp_path), \
+         patch("agentorg.config.AGENT_DOCS_DIR", temp_dir), \
          patch("agentorg.config.ANTHROPIC_API_KEY", "test-key"):
         agent = VerifierAgent()
         result = agent.run(dry_run=False)

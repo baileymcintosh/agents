@@ -16,7 +16,7 @@ except ImportError:  # pragma: no cover - minimal test environment fallback
 
 from agentorg.agents.base import BaseAgent
 from agentorg import config
-from agentorg.evidence import EvidenceStore
+from agentorg.evidence import ClaimRecord, EvidenceStore, SourceRecord
 
 
 class ReporterAgent(BaseAgent):
@@ -194,6 +194,42 @@ class ReporterAgent(BaseAgent):
                 lines.append(f"- ({claim.status}) {claim.statement}")
         return "\n".join(lines)
 
+    def _citation_mappings(self) -> tuple[list[ClaimRecord], dict[str, SourceRecord]]:
+        claims = sorted(
+            self.store.claims(),
+            key=lambda claim: (
+                0 if claim.status == "verified" else 1,
+                0 if claim.materiality == "core" else 1,
+                -claim.confidence,
+            ),
+        )
+        sources = {source.id: source for source in self.store.sources()}
+        return claims, sources
+
+    def _apply_inline_citations(self, summary: str) -> str:
+        claims, _ = self._citation_mappings()
+        cited = summary
+        for claim in claims[:12]:
+            if claim.statement in cited:
+                refs = ", ".join(claim.source_ids[:2]) if claim.source_ids else claim.id
+                cited = cited.replace(claim.statement, f"{claim.statement} [{refs}]", 1)
+        return cited
+
+    def _references_section(self) -> str:
+        _, sources = self._citation_mappings()
+        if not sources:
+            return ""
+        lines = [
+            "## Sources",
+            "",
+            "| ID | Title | Tier | Publisher |",
+            "|---|---|---|---|",
+        ]
+        for source in sorted(sources.values(), key=lambda item: (item.tier, item.title))[:40]:
+            publisher = source.publisher or source.url or ""
+            lines.append(f"| {source.id} | {source.title} | {source.tier} | {publisher} |")
+        return "\n".join(lines)
+
     def _export_pdf(self, report_path: Path) -> Path | None:
         import subprocess
         pdf_path = report_path.with_suffix(".pdf")
@@ -243,7 +279,7 @@ class ReporterAgent(BaseAgent):
         except Exception as e:
             logger.warning(f"[reporter] Slack post failed (non-fatal): {e}")
 
-    def run(self, dry_run: bool = False) -> dict[str, Any]:
+    def run(self, dry_run: bool = False, revision_instructions: str = "") -> dict[str, Any]:
         logger.info("[reporter] Starting.")
         self.post_slack_progress("📝", "starting", "Synthesizing all research into final report...")
 
@@ -276,6 +312,12 @@ class ReporterAgent(BaseAgent):
             "- This is the final deliverable for senior leadership making real financial decisions\n\n"
             f"{context}\n\n{evidence_digest}"
         )
+        if revision_instructions:
+            summary_prompt = (
+                "REVISION REQUIRED. Fix the following before writing:\n"
+                f"{revision_instructions}\n\n"
+                + summary_prompt
+            )
 
         if dry_run:
             summary = "_Dry-run mode._"
@@ -308,7 +350,8 @@ class ReporterAgent(BaseAgent):
                 logger.warning(f"[reporter] Could not load charts manifest: {e}")
 
         # Build markdown with ALL charts embedded + explained
-        md_with_charts = summary
+        cited_summary = self._apply_inline_citations(summary)
+        md_with_charts = cited_summary
 
         # Insert reporter summary charts next to relevant sections
         if chart_paths:
@@ -318,7 +361,7 @@ class ReporterAgent(BaseAgent):
                 "market_impacts": ["## financial", "## market"],
             }
             remaining = dict(chart_paths)
-            lines = summary.split("\n")
+            lines = cited_summary.split("\n")
             out = []
             for line in lines:
                 out.append(line)
@@ -352,8 +395,11 @@ class ReporterAgent(BaseAgent):
                         data_section += f"{desc}\n\n"
             md_with_charts = md_with_charts + data_section
 
+        references_section = self._references_section()
         if evidence_digest:
             md_with_charts = md_with_charts + "\n\n---\n\n" + evidence_digest
+        if references_section:
+            md_with_charts = md_with_charts + "\n\n---\n\n" + references_section
 
         # Collect ALL chart paths for notebook embedding
         all_pngs = sorted(config.REPORTS_DIR.glob("chart_*.png"), key=lambda p: p.stat().st_mtime)
@@ -362,7 +408,7 @@ class ReporterAgent(BaseAgent):
         report_path = self.write_report("Executive Summary", md_with_charts)
 
         # Build Jupyter notebook — primary output, open in VS Code
-        nb_path = self._build_notebook(summary, chart_paths, report_path) if not dry_run else None
+        nb_path = self._build_notebook(cited_summary, chart_paths, report_path) if not dry_run else None
 
         # PDF
         pdf_path: Path | None = None

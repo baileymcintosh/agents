@@ -34,6 +34,11 @@ class ProjectSession:
     last_outputs: list[str] = field(default_factory=list)  # file paths / URLs produced
     pending_feedback: str = ""
     notes: str = ""
+    publication_approval_required: bool = False
+    publication_approval_status: str = ""
+    publication_approval_run_id: str = ""
+    publication_approval_path: str = ""
+    publication_approval_updated_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -92,4 +97,17 @@ def _write_md(s: ProjectSession) -> None:
         lines += ["## Pending Feedback", s.pending_feedback, ""]
     if s.notes:
         lines += ["## Notes", s.notes, ""]
+    if s.publication_approval_status:
+        lines += [
+            "## Publication Approval",
+            f"- Required: {s.publication_approval_required}",
+            f"- Status: {s.publication_approval_status}",
+        ]
+        if s.publication_approval_run_id:
+            lines.append(f"- Run ID: {s.publication_approval_run_id}")
+        if s.publication_approval_path:
+            lines.append(f"- Artifact: {s.publication_approval_path}")
+        if s.publication_approval_updated_at:
+            lines.append(f"- Updated: {s.publication_approval_updated_at}")
+        lines.append("")
     SESSION_MD.write_text("\n".join(lines), encoding="utf-8")

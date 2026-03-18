@@ -260,6 +260,40 @@ class EvidenceStore:
     def unresolved_count(self) -> int:
         return sum(1 for item in self.agenda() if item.status != "done")
 
+    def claims_for_agent(self, agent_role: str, limit: int = 3) -> list[ClaimRecord]:
+        claims = [claim for claim in self.claims() if claim.agent_role == agent_role]
+        claims.sort(key=lambda claim: (-claim.confidence, claim.created_at))
+        return claims[:limit]
+
+    def sources_for_agent(self, agent_role: str, limit: int = 3) -> list[SourceRecord]:
+        sources = [source for source in self.sources() if source.agent_role == agent_role]
+        sources.sort(key=lambda source: (tier_rank(source.tier), source.created_at))
+        return sources[:limit]
+
+    def format_cross_agent_brief(self, agent_role: str, limit: int = 3) -> str:
+        other_role = "quant_builder" if agent_role == "qual_builder" else "qual_builder"
+        claims = self.claims_for_agent(other_role, limit=limit)
+        sources = self.sources_for_agent(other_role, limit=limit)
+        if not claims and not sources:
+            return ""
+
+        lines = [f"## Evidence From Your Partner ({other_role})"]
+        if claims:
+            lines.append("### Top Claims")
+            for claim in claims:
+                lines.append(
+                    f"- [{claim.id}] ({claim.status}) {claim.statement} "
+                    f"(confidence={claim.confidence:.2f})"
+                )
+        if sources:
+            lines.append("### Top Sources")
+            for source in sources:
+                lines.append(
+                    f"- [{source.id}] [{source.tier}] {source.title} — "
+                    f"{source.publisher or source.url or 'unknown source'}"
+                )
+        return "\n".join(lines)
+
     def latest_verification(self) -> dict[str, Any]:
         raw = self._load_json(self.verification_path)
         return raw if isinstance(raw, dict) else {}
@@ -361,4 +395,3 @@ class EvidenceStore:
             if claim.id in updates:
                 claim.status, claim.verification_notes = updates[claim.id]
         self.save_claims(claims)
-

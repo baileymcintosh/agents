@@ -69,6 +69,7 @@ mypy_path = "src"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --basetemp=.pytest_tmp"
+tmp_path_retention_policy = "none"
 
 [tool.coverage.run]
 source = ["agentorg"]

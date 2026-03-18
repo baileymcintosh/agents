@@ -20,29 +20,29 @@ class ConcreteAgent(BaseAgent):
 
 
 @pytest.fixture
-def agent(tmp_path: Path) -> ConcreteAgent:
+def agent(temp_dir: Path) -> ConcreteAgent:
     """Create a test agent with a temporary reports directory."""
-    with patch("agentorg.config.REPORTS_DIR", tmp_path), \
-         patch("agentorg.config.AGENT_DOCS_DIR", tmp_path), \
+    with patch("agentorg.config.REPORTS_DIR", temp_dir), \
+         patch("agentorg.config.AGENT_DOCS_DIR", temp_dir), \
          patch("agentorg.config.ANTHROPIC_API_KEY", "test-key"):
         return ConcreteAgent()
 
 
-def test_agent_creates_reports_dir(tmp_path: Path) -> None:
-    reports_dir = tmp_path / "reports"
+def test_agent_creates_reports_dir(temp_dir: Path) -> None:
+    reports_dir = temp_dir / "reports"
     with patch("agentorg.config.REPORTS_DIR", reports_dir), \
-         patch("agentorg.config.AGENT_DOCS_DIR", tmp_path), \
+         patch("agentorg.config.AGENT_DOCS_DIR", temp_dir), \
          patch("agentorg.config.ANTHROPIC_API_KEY", "test-key"):
         ConcreteAgent()
     assert reports_dir.exists()
 
 
-def test_agent_loads_system_prompt_from_file(tmp_path: Path) -> None:
-    prompt_file = tmp_path / "test_agent.md"
+def test_agent_loads_system_prompt_from_file(temp_dir: Path) -> None:
+    prompt_file = temp_dir / "test_agent.md"
     prompt_file.write_text("You are a test agent.", encoding="utf-8")
 
-    with patch("agentorg.config.REPORTS_DIR", tmp_path), \
-         patch("agentorg.config.AGENT_DOCS_DIR", tmp_path), \
+    with patch("agentorg.config.REPORTS_DIR", temp_dir), \
+         patch("agentorg.config.AGENT_DOCS_DIR", temp_dir), \
          patch("agentorg.config.ANTHROPIC_API_KEY", "test-key"):
         a = ConcreteAgent()
 

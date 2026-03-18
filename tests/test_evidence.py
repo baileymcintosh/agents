@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from agentorg.evidence import EvidenceStore, extract_json_block
 
 
@@ -19,11 +17,11 @@ def test_extract_json_block_returns_clean_text_and_payload() -> None:
     assert payload["sources"][0]["title"] == "Reuters"
 
 
-def test_evidence_store_bootstrap_and_ingest(tmp_path: Path) -> None:
-    store = EvidenceStore(tmp_path)
+def test_evidence_store_bootstrap_and_ingest(temp_dir) -> None:
+    store = EvidenceStore(temp_dir)
     store.bootstrap_agenda(["Check oil prices", "Review official statements"])
 
-    report_path = tmp_path / "report.md"
+    report_path = temp_dir / "report.md"
     report_path.write_text("Report", encoding="utf-8")
     result = store.ingest_payload(
         agent_role="qual_builder",

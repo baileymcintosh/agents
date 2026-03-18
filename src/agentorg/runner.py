@@ -15,6 +15,8 @@ except ImportError:  # pragma: no cover - minimal test environment fallback
     logger = logging.getLogger(__name__)
 
 from agentorg import config, session_state
+from agentorg.approval import create as create_publication_approval
+from agentorg.agents.qa_editor import QAEditorAgent
 from agentorg.agents.reporter import ReporterAgent
 from agentorg.agents.session import run_collaborative_session
 from agentorg.agents.verifier import VerifierAgent
@@ -69,6 +71,7 @@ def _run_project_cycle(
             agenda_seed=goals or ["Produce a defensible synthesis with claims, sources, and charts."],
             time_budget=time_budget,
             max_cycles=max_cycles,
+            mode=mode,
             dry_run=False,
         )
 
@@ -81,20 +84,67 @@ def _run_project_cycle(
         ]
 
         reporter_result: dict[str, Any] | None = None
+        qa_result: dict[str, Any] | None = None
+        approval_result = None
         if verifier_result.get("verdict") == "PASS":
             reporter_result = ReporterAgent().run(dry_run=False)
-            outputs.extend(
-                [
-                    reporter_result.get("report"),
-                    reporter_result.get("notebook"),
-                    reporter_result.get("pdf"),
-                ]
+            qa_result = QAEditorAgent(brief=brief, research_plan=research_plan).run(
+                report_path=reporter_result.get("report", ""),
+                dry_run=False,
             )
+            if qa_result.get("verdict") == "REVISE":
+                logger.info("[runner] QA editor requested revision; running reporter once more")
+                reporter_result = ReporterAgent().run(
+                    dry_run=False,
+                    revision_instructions=qa_result.get("instructions", ""),
+                )
+
+            final_outputs = [
+                session_result.get("qual_report"),
+                session_result.get("quant_report"),
+                session_result.get("dialogue_report"),
+                verifier_result.get("report"),
+                reporter_result.get("report"),
+                reporter_result.get("notebook"),
+                reporter_result.get("pdf"),
+                qa_result.get("report") if qa_result else None,
+            ]
+
+            requires_approval = bool(config.PUBLICATION_APPROVAL_REQUIRED) and mode == "deep"
+            approval_summary = (
+                f"{mode.title()} run for {session.name} passed verification "
+                f"with {len(session_result.get('charts', []))} chart(s) and "
+                f"{session_result.get('messages', 0)} collaboration message(s)."
+            )
+            approval_result = create_publication_approval(
+                reports_dir,
+                run_id=f"{session.name}-{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                project_name=session.name,
+                project_dir=str(project_dir),
+                mode=mode,
+                requires_approval=requires_approval,
+                verifier_verdict=verifier_result.get("verdict", ""),
+                report_path=reporter_result.get("report", ""),
+                notebook_path=reporter_result.get("notebook", ""),
+                pdf_path=reporter_result.get("pdf", ""),
+                qa_report_path=qa_result.get("report", "") if qa_result else "",
+                outputs=[output for output in final_outputs if output],
+                summary=approval_summary,
+            )
+            session.publication_approval_required = approval_result.requires_approval
+            session.publication_approval_status = approval_result.status
+            session.publication_approval_run_id = approval_result.run_id
+            session.publication_approval_path = str(reports_dir / "_state" / "publication_approval.json")
+            session.publication_approval_updated_at = approval_result.updated_at
+            outputs = [output for output in final_outputs if output]
         else:
             logger.warning(
                 f"[runner] Reporter skipped because verifier verdict was {verifier_result.get('verdict')}"
             )
-        _push(project_dir, f"{mode}: collaborative research cycle")
+        if approval_result and approval_result.is_pending():
+            logger.info("[runner] Publication approval required; skipping auto-push")
+        else:
+            _push(project_dir, f"{mode}: collaborative research cycle")
         elapsed = int((datetime.datetime.now() - start).total_seconds())
 
     return {
@@ -102,6 +152,8 @@ def _run_project_cycle(
         "session": session_result,
         "verification": verifier_result,
         "reporter": reporter_result,
+        "qa_editor": qa_result if verifier_result.get("verdict") == "PASS" else None,
+        "approval": approval_result.to_dict() if approval_result else None,
         "mode": mode,
         "elapsed_seconds": elapsed,
     }

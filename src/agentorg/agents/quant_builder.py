@@ -152,6 +152,7 @@ class QuantBuilderAgent:
         research_plan: str,
         messenger: AgentMessenger,
         agenda_items: list[dict[str, str]],
+        partner_evidence_brief: str = "",
         clock_context: str = "",
     ) -> dict[str, Any]:
         """Execute one research turn and return prose, charts, and structured evidence."""
@@ -176,6 +177,12 @@ class QuantBuilderAgent:
                 f"\n{partner_context}\n\n"
                 "Address your partner's data requests first — verify their events in the market data "
                 "and annotate your charts accordingly."
+            )
+
+        if partner_evidence_brief:
+            prompt_parts.append(
+                f"{partner_evidence_brief}\n\n"
+                "Use this shared evidence to avoid duplicate work and test whether your partner's claims show up in the data."
             )
 
         prompt_parts.append(
