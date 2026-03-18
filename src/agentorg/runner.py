@@ -218,6 +218,7 @@ def _run_project_cycle(
         )
         registry_path = update_source_registry(project_dir=project_dir, store=verifier.store)
         outputs.extend([str(memory_path), str(registry_path)])
+        _organise_run_outputs(reports_dir, project_dir, reporter_result)
         if approval_result and approval_result.is_pending():
             logger.info("[runner] Publication approval required; skipping auto-push")
         else:
@@ -331,6 +332,34 @@ def _project_runtime(
         config.QUANT_BUILDER_MODEL = previous["QUANT_BUILDER_MODEL"]
         config.VERIFIER_MODEL = previous["VERIFIER_MODEL"]
         config.REPORTER_MODEL = previous["REPORTER_MODEL"]
+
+
+def _organise_run_outputs(reports_dir: Path, project_dir: Path, reporter_result: dict | None) -> None:
+    """
+    Move all PNG charts into a charts/ subfolder and copy the final report
+    to project_dir/report.md (latest run always wins) for easy access.
+    """
+    import shutil
+
+    # Move all PNGs into charts/ subfolder within the run dir
+    charts_dir = reports_dir / "charts"
+    charts_dir.mkdir(exist_ok=True)
+    for png in reports_dir.glob("*.png"):
+        dest = charts_dir / png.name
+        if not dest.exists():
+            png.rename(dest)
+            logger.info(f"[runner] Chart → charts/{png.name}")
+
+    # Copy the executive summary to project root as report.md for easy access
+    if reporter_result:
+        report_src = reporter_result.get("report", "")
+        nb_src = reporter_result.get("notebook", "")
+        if report_src and Path(report_src).exists():
+            shutil.copy2(report_src, project_dir / "report.md")
+            logger.info(f"[runner] Latest report → report.md")
+        if nb_src and Path(nb_src).exists():
+            shutil.copy2(nb_src, project_dir / "report.ipynb")
+            logger.info(f"[runner] Latest notebook → report.ipynb")
 
 
 def _clear_evidence_state(reports_dir: Path) -> None:

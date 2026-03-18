@@ -95,9 +95,16 @@ _PREAMBLE = textwrap.dedent("""\
 
     _orig_show = plt.show
     def _auto_save_and_show(*args, **kwargs):
+        import re as _re
         _chart_counter[0] += 1
-        ts = int(time.time())
-        fname = os.path.join(REPORTS_DIR, f'chart_quant_{ts}_{_chart_counter[0]:02d}.png')
+        # Use the current axes title as the filename if available
+        ax = plt.gcf().axes[0] if plt.gcf().axes else None
+        raw_title = (ax.get_title() if ax else '') or ''
+        if raw_title:
+            slug = _re.sub(r'[^a-z0-9]+', '_', raw_title.lower()).strip('_')[:40]
+        else:
+            slug = f'chart_{_chart_counter[0]:02d}'
+        fname = os.path.join(REPORTS_DIR, f'{_chart_counter[0]:02d}_{slug}.png')
         plt.savefig(fname, dpi=150, bbox_inches='tight', facecolor='white')
         _saved_charts.append(fname)
         print(f'CHART_SAVED:{fname}', flush=True)

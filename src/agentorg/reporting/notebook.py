@@ -19,6 +19,9 @@ import re
 from pathlib import Path
 from typing import Any
 
+# Regex that matches ![alt text](path/to/file.png)
+_IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+\.png)\)", re.IGNORECASE)
+
 from loguru import logger
 
 try:
@@ -55,6 +58,47 @@ def _hidden_chart_cell(png_path: Path, caption: str = "") -> dict[str, Any]:
     cell["outputs"] = [_png_output(png_path)]
     cell["execution_count"] = None
     return cell
+
+
+def _emit_markdown_with_embedded_images(
+    text: str, cells: list, used_chart_keys: set[str]
+) -> None:
+    """
+    Scan markdown text for ![alt](path.png) references. For each:
+    - Emit any preceding text as a markdown cell
+    - Embed the PNG as a base64 hidden chart cell
+    - Strip the image reference from the text (so it's not a broken link)
+
+    Falls back to plain markdown cell if the PNG file doesn't exist
+    (e.g., path is a URL or the file was deleted).
+    """
+    last_end = 0
+    for match in _IMG_RE.finditer(text):
+        alt = match.group(1) or "Chart"
+        path_str = match.group(2)
+        png_path = Path(path_str)
+
+        # Emit text before this image
+        before = text[last_end:match.start()].strip()
+        if before:
+            cells.append(nbformat.v4.new_markdown_cell(before))
+
+        # Embed the chart if the file exists; otherwise emit a placeholder
+        if png_path.exists():
+            label = alt or png_path.stem.replace("_", " ").title()
+            cells.append(_hidden_chart_cell(png_path, label))
+            logger.debug(f"[notebook] Embedded chart: {png_path.name}")
+        else:
+            # File not found (e.g. absolute path from a different machine) — skip image
+            cells.append(nbformat.v4.new_markdown_cell(f"*[Chart not available: {alt}]*"))
+            logger.warning(f"[notebook] Chart file not found, skipping: {path_str}")
+
+        last_end = match.end()
+
+    # Emit any remaining text after the last image
+    remaining = text[last_end:].strip()
+    if remaining:
+        cells.append(nbformat.v4.new_markdown_cell(remaining))
 
 
 def _split_into_sections(text: str) -> list[tuple[str, str]]:
@@ -139,22 +183,24 @@ def build_notebook(
     sections = _split_into_sections(summary_text)
 
     for heading, body in sections:
-        # Combine heading + body into one markdown cell
-        md = f"{heading}\n\n{body}".strip() if heading else body
-        if md:
-            cells.append(nbformat.v4.new_markdown_cell(md))
+        # Combine heading + body, then strip inline image refs and embed as cells
+        md_raw = f"{heading}\n\n{body}".strip() if heading else body
+        if not md_raw:
+            continue
 
-        # Insert chart after section if relevant and not yet used
+        # Split markdown on embedded image references; emit text + chart cells
+        _emit_markdown_with_embedded_images(md_raw, cells, used_charts)
+
+        # Insert reporter summary chart after section if relevant and not yet used
         chart_path = _chart_for_section(heading, chart_paths)
         if chart_path:
-            # Find which key this is
             for key, path in chart_paths.items():
                 if path == chart_path and key not in used_charts:
                     cells.append(_hidden_chart_cell(chart_path, heading.lstrip("#").strip()))
                     used_charts.add(key)
                     break
 
-    # ── Append any charts not yet placed ──────────────────────────────────────
+    # ── Append any reporter charts not yet placed ──────────────────────────────
     for key, path in chart_paths.items():
         if key not in used_charts:
             label = key.replace("_", " ").title()
