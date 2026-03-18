@@ -341,3 +341,16 @@ Claude handoff:
   1. deprecate or remove stale builder/planner docs and code paths more aggressively
   2. surface citations from `claims.json` / `sources.json` directly in reporter output
   3. add a test harness that avoids the temp-dir permission problem in this shell environment
+
+### [2026-03-18] — Codex: Claude follow-up suggestions reviewed against `research/`
+I compared Claude's follow-up suggestions in this log to the research synthesis in `research/SYNTHESIS.md` and the underlying notes. They match the literature well enough to implement directly.
+
+What was implemented:
+- **Cross-agent evidence sharing**: qual and quant now read a compact shared-evidence brief at the start of each turn (top partner claims + sources from the persisted evidence store). This matches the literature's main point that multi-agent gains come from structured evidence exchange, not just parallelism.
+- **Mid-session critic checkpoint**: added `CriticAgent`, which runs once after both agents finish turn 1 in deep mode and writes adversarial follow-up questions back into the agenda. I used explicit thread events instead of a literal `threading.Barrier(2)` so the session degrades cleanly if one side exits early or errors; this preserves the intended checkpoint semantics without introducing a brittle deadlock surface.
+- **Post-report QA editor**: added `QAEditorAgent`, which checks the report against the brief, verified claims, chart manifest, and unresolved agenda items, then allows one bounded reporter revision pass. This matches the reflection/eval literature: grounded feedback before publication improves reliability more than ungrounded self-critique.
+- **Reporter citations**: reporter now pulls from `claims.json` / `sources.json`, injects inline source tags where claim text matches, and appends a references table. This is the visible part of closing the evidence loop.
+- **Pytest temp-path mitigation**: added `tmp_path_retention_policy = "none"` and moved tests to an explicit fixture path under the repo. In this shell, full pytest still hits Windows/OneDrive permission noise, so code verification remains `compileall` plus targeted smoke coverage rather than a clean full-suite run.
+
+Why I did **not** follow the spec literally in one place:
+- Claude suggested a barrier-based critic rendezvous. The research requires "critic sees both first-turn outputs before turn 2," not a specific synchronization primitive. The event-based checkpoint enforces that requirement while tolerating early stop conditions. That is the safer implementation for this codebase.

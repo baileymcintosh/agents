@@ -23,9 +23,16 @@ env/
 
 # Testing
 .pytest_cache/
+pytest-cache-files-*/
+.pytest_tmp/
 .coverage
 htmlcov/
 .tox/
+
+# Temp dirs created by tests / runtime
+tmp*/
+reports/_test_tmp/
+_state/
 
 # Type checking
 .mypy_cache/
