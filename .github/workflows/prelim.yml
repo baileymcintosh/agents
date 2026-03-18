@@ -94,7 +94,13 @@ jobs:
 
       - name: Run prelim pipeline
         # Full canonical path: collaborative qual+quant session → critic → verifier → reporter → qa_editor
-        run: uv run agentorg prelim
+        env:
+          PROJECT_NAME: ${{ github.event.inputs.project_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          RUN_DIR="/tmp/projects/${PROJECT_NAME}/runs/prelim_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$RUN_DIR"
+          REPORTS_DIR="$RUN_DIR" uv run agentorg prelim
 
       - name: Summary
         if: always()

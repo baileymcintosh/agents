@@ -106,7 +106,10 @@ jobs:
         env:
           PROJECT_NAME: ${{ github.event.inputs.project_name }}
           FEEDBACK: ${{ github.event.inputs.feedback }}
-        run: uv run agentorg iterate "$FEEDBACK"
+        run: |
+          RUN_DIR="/tmp/projects/${PROJECT_NAME}/runs/deep_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$RUN_DIR"
+          REPORTS_DIR="$RUN_DIR" uv run agentorg iterate "$FEEDBACK"
 
       - name: Summary
         if: always()
