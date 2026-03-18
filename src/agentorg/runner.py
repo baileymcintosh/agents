@@ -33,6 +33,7 @@ from agentorg.memory import (
 PRELIM_MODEL_OVERRIDES: dict[str, Any] = {
     "QUAL_BUILDER_MODEL": config.PRELIM_MODEL,
     "VERIFIER_MODEL": config.PRELIM_MODEL,
+    "REPORTER_MODEL": config.PRELIM_MODEL,
     "FAST_MODE": True,
 }
 
@@ -266,12 +267,14 @@ def _project_runtime(
         "TIME_BUDGET": config.TIME_BUDGET,
         "QUAL_BUILDER_MODEL": config.QUAL_BUILDER_MODEL,
         "VERIFIER_MODEL": config.VERIFIER_MODEL,
+        "REPORTER_MODEL": config.REPORTER_MODEL,
     }
     config.set_reports_dir(reports_dir)
     config.TIME_BUDGET = time_budget
     if mode == "prelim":
         config.QUAL_BUILDER_MODEL = PRELIM_MODEL_OVERRIDES["QUAL_BUILDER_MODEL"]
         config.VERIFIER_MODEL = PRELIM_MODEL_OVERRIDES["VERIFIER_MODEL"]
+        config.REPORTER_MODEL = PRELIM_MODEL_OVERRIDES["REPORTER_MODEL"]
         config.FAST_MODE = PRELIM_MODEL_OVERRIDES["FAST_MODE"]
     else:
         config.FAST_MODE = False
@@ -290,6 +293,7 @@ def _project_runtime(
         config.TIME_BUDGET = previous["TIME_BUDGET"]
         config.QUAL_BUILDER_MODEL = previous["QUAL_BUILDER_MODEL"]
         config.VERIFIER_MODEL = previous["VERIFIER_MODEL"]
+        config.REPORTER_MODEL = previous["REPORTER_MODEL"]
 
 
 def _clear_evidence_state(reports_dir: Path) -> None:

@@ -307,6 +307,17 @@ class ReporterAgent(BaseAgent):
         context = self._gather_recent_reports()
         evidence_digest = self._evidence_digest()
 
+        # In fast/prelim mode, truncate context to stay within Groq's ~32k token limit.
+        # The prompt template itself is ~600 chars; leave ~20k chars for context + digest.
+        if config.FAST_MODE:
+            context_for_prompt = context[:12000]
+            digest_for_prompt = evidence_digest[:6000]
+            if len(context) > 12000:
+                context_for_prompt += "\n\n[... context truncated for fast-mode reporter ...]"
+        else:
+            context_for_prompt = context
+            digest_for_prompt = evidence_digest
+
         summary_prompt = (
             "You are the reporter — the senior editor who synthesises work from a two-person research team:\n"
             "- **Qualitative researcher (OpenAI GPT-4o):** news, speeches, policy analysis, geopolitical context\n"
@@ -331,7 +342,7 @@ class ReporterAgent(BaseAgent):
             "- Include the cross-agent dialogue insights: moments where quant spotted something and qual explained it\n"
             "- Prefer claims marked `verified` when the evidence digest distinguishes them\n"
             "- This is the final deliverable for senior leadership making real financial decisions\n\n"
-            f"{context}\n\n{evidence_digest}"
+            f"{context_for_prompt}\n\n{digest_for_prompt}"
         )
         if revision_instructions:
             summary_prompt = (
