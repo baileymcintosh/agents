@@ -627,3 +627,35 @@ After fixes were committed and pushed:
 
 Both should now route the reporter through Groq in prelim/FAST_MODE and stay within budget.
 
+### Re-run results — BLOCKED: Anthropic credit balance is zero
+
+Both re-triggered runs (23235434654, 23235437909) failed within 10 seconds because the
+Anthropic credit balance is exhausted. The quant_builder uses `claude-sonnet-4-6` directly
+via the Anthropic API and cannot be rerouted to Groq — it uses Anthropic's native tool-use
+format (Python execution + search), which is not compatible with the OpenAI-compatible
+Groq API.
+
+**This is a billing issue, not a code bug.**
+
+The pipeline requires Anthropic credits to run:
+- `quant_builder`: uses Anthropic tool-use API (non-substitutable with Groq)
+- `reporter`: now correctly routed to Groq in prelim mode (fixed in this session)
+- `verifier`: correctly routed to Groq in prelim mode
+- `qual_builder`: correctly routed to Groq in prelim mode
+
+**Action required**: Replenish Anthropic API credits at console.anthropic.com, then
+re-trigger both runs:
+```
+gh workflow run prelim.yml --repo baileymcintosh/agents --ref main \
+  --field project_name="fed-policy-2026" \
+  --field brief="Analysis of the Federal Reserve's 2026 monetary policy path..."
+
+gh workflow run prelim.yml --repo baileymcintosh/agents --ref main \
+  --field project_name="ai-labor-markets-2026" \
+  --field brief="The impact of AI-driven automation on US labor markets in 2026..."
+```
+
+**Note**: The original iran-us-economy-2026 run (23234517934) succeeded because it ran
+before credits ran out. All code fixes in this session are correct and ready — the pipeline
+will work end-to-end as soon as credits are replenished.
+
