@@ -27,9 +27,25 @@ class DebuggerAgent(BaseAgent):
 
     def __init__(self) -> None:
         super().__init__()
-        self.model = config.VERIFIER_MODEL  # Sonnet is sufficient for debugging
+        self.model = config.DEBUGGER_MODEL
         self.run_id = os.getenv("GITHUB_RUN_ID", "")
         self.repo = os.getenv("GITHUB_REPOSITORY", config.GITHUB_REPO)
+        # Use OpenAI client if model is a GPT or gpt-4o-mini variant
+        self._use_openai = self.model.startswith("gpt-") or self.model.startswith("o1") or self.model.startswith("o3")
+        if self._use_openai:
+            import openai as _openai
+            self._openai_client = _openai.OpenAI(api_key=config.OPENAI_API_KEY)
+
+    def _call(self, prompt: str) -> str:
+        """Route to OpenAI or Anthropic depending on configured model."""
+        if self._use_openai:
+            response = self._openai_client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1024,
+            )
+            return response.choices[0].message.content or ""
+        return self.call_claude(prompt)
 
     # ── Inline recovery (primary mode) ────────────────────────────────────────
 
@@ -93,7 +109,7 @@ class DebuggerAgent(BaseAgent):
             "- Repeated identical failures → escalate"
         )
 
-        response = self.call_claude(prompt)
+        response = self._call(prompt)
 
         # Parse the response
         if "ACTION: RETRY" in response:
@@ -177,7 +193,7 @@ class DebuggerAgent(BaseAgent):
             f"## Failure Logs\n```\n{logs}\n```"
         )
 
-        diagnosis = self.call_claude(prompt)
+        diagnosis = self._call(prompt)
         report_path = self.write_report("Pipeline Crash Report", diagnosis)
 
         # Extract severity for emoji
