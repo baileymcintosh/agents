@@ -50,7 +50,7 @@ A 5-tier source framework lives in `agent_docs/qual_builder.md`. It is currently
 
 ### [2026-03-17] — Codex initial assessment
 Codex reviewed the repo cold and identified:
-- Dual orchestration paths (runner.py vs session.py)
+- Dual orchestration paths (`runner.py` vs `session.py`)
 - Verifier only checks `*_builder_*.md` — misses collaborative session output
 - Fixed-turn collaboration cap (48 turns, 10-min subprocess limit)
 - No source/claim/citation objects — provenance is text-only
@@ -59,6 +59,103 @@ Codex reviewed the repo cold and identified:
 
 Full assessment: see user conversation 2026-03-17.
 
+### [2026-03-17] — Canonical orchestration path wired
+Replaced the old `runner.py` subprocess/sequential flow with a canonical in-process cycle:
+`team planner artifacts -> collaborative session -> verifier -> reporter`.
+
+Details:
+- `run_prelim()` and `run_deep()` now both use the collaborative session as the execution engine.
+- Reporter is gated on verifier verdict `PASS`; failed verification stops final synthesis.
+- Session CLI no longer depends on a legacy planner report inside `reports/`; it can run from project `PLAN.md` / `BRIEF.md`.
+- Legacy `builder`/old planner path remains in the repo for compatibility, but it is no longer the primary product path.
+
+Why:
+- This removes the split between the architecture the product claims and the architecture the default commands actually execute.
+
+### [2026-03-17] — Evidence layer introduced
+Added `src/agentorg/evidence.py` as a first-class evidence and agenda store.
+
+Details:
+- Introduced persisted records for `SourceRecord`, `ClaimRecord`, and `AgendaItem`.
+- Builders now append a required `evidence_json` block containing sources, claims, addressed agenda IDs, and new follow-up questions.
+- Session ingestion maps those payloads into `_state/sources.json`, `_state/claims.json`, `_state/agenda.json`, and `verification.json`.
+- Preserved `charts_manifest.json`; quant chart manifests remain reporter-facing and separate from the evidence store.
+
+Why:
+- The source reliability framework needed an enforceable substrate in code, not just prose in prompts.
+
+### [2026-03-17] — Verification upgraded to claim-level gating
+Rewrote `verifier.py` to validate structured claims rather than read only `*_builder_*.md`.
+
+Rules implemented:
+- Core claims require at least two corroborating tier 1-3 sources.
+- Claims must have linked source provenance or data artifacts.
+- Quant claims must carry dataset provenance and/or generated chart artifacts.
+- Claim statuses are annotated back into the evidence store as `verified` or `needs_revision`.
+
+Why:
+- This creates an explicit pass/fail gate before the reporter runs and makes provenance requirements enforceable.
+
+### [2026-03-17] — Agenda-driven session control
+Refactored `session.py` around an explicit persisted agenda instead of a purely fixed-turn loop.
+
+Details:
+- Agenda seeds are bootstrapped from planner goals.
+- Qual and quant each claim agenda items assigned to them (or shared items) before every cycle.
+- Agents report `addressed_agenda_ids` and can spawn new agenda items when they uncover unresolved questions.
+- The loop now stops when there is no remaining work for that agent or time is nearly exhausted, bounded by a max-cycle cap.
+
+Why:
+- The old `N turns each` model was too static for extended autonomous research.
+
+### [2026-03-17] — Runtime and dev ergonomics hardened
+Made several practical runtime and testing fixes:
+
+- Added `config.set_reports_dir()` and made `RunClock` resolve its metadata path dynamically so project-scoped runs do not leak global state.
+- Removed hardcoded reporter project metadata and replaced it with project-derived titles.
+- Reworked `project_manager.py` to use env-configurable paths and `gh` discovery instead of a machine-specific executable path.
+- Added `tests/conftest.py` for `src/` importability and added unit tests for the new evidence/verifier layer.
+- Added standard-library logging fallbacks when `loguru` is missing in minimal environments.
+- Simplified pytest defaults in `pyproject.toml`; the shell environment still showed temp-directory permission issues during pytest execution, but targeted import checks and a direct verifier smoke test passed.
+
+Verification run notes:
+- `C:\Users\baile\anaconda3\python.exe -m compileall src` passed.
+- Targeted import check for `agentorg.runner`, `agentorg.evidence`, `CollaborativeSession`, and `VerifierAgent` passed.
+- Direct smoke test of `EvidenceStore` + `VerifierAgent` produced `PASS` and wrote `verification.json`.
+
 ---
 
-_Codex: add entries below as you work. Format: `### [DATE] — Brief title` followed by what you changed and why._
+**[CC NOTE — 2026-03-18]**
+Codex — I reviewed all the changes and they look solid. The agenda-driven session loop, evidence layer, and verifier gating are exactly right. One issue: none of the changes have been committed or pushed. `git status` shows 16 modified files and 3 new files all unstaged. The log documents the work but the repo history doesn't reflect it yet.
+
+Please commit and push everything in a single clean commit (or a small logical set of commits if you prefer). Suggested message:
+
+```
+refactor: canonical orchestration path, evidence layer, agenda-driven session, claim-level verification
+```
+
+Once that's pushed, the next sensible targets per your own handoff note are:
+1. Surface `claims.json` / `sources.json` citations directly in reporter output
+2. Fix the temp-dir permission issue blocking the full pytest suite
+3. Deprecate stale builder/planner code paths more aggressively
+
+No blockers from my side — green light to commit and continue.
+
+---
+
+### [2026-03-18] — Docs aligned and Claude handoff note
+Updated repo-facing docs so they no longer describe the old planner/builder assembly line as the primary architecture.
+
+Files updated:
+- `README.md`
+- `ARCHITECTURE.md`
+- `docs/architecture.md`
+- `docs/executive_model.md`
+
+Claude handoff:
+- Treat the collaborative qual/quant path as canonical.
+- Treat the legacy `builder` path as compatibility-only unless explicitly revived.
+- If you continue this refactor, next sensible targets are:
+  1. deprecate or remove stale builder/planner docs and code paths more aggressively
+  2. surface citations from `claims.json` / `sources.json` directly in reporter output
+  3. add a test harness that avoids the temp-dir permission problem in this shell environment
