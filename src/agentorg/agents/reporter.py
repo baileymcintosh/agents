@@ -112,31 +112,40 @@ class ReporterAgent(BaseAgent):
         paths: dict[str, Path] = {}
 
         if "scenarios" in data:
-            p = scenario_probability_chart(
-                data["scenarios"][:10],
-                config.REPORTS_DIR / "chart_scenarios.png",
-                title=data.get("scenario_title", "Scenario Probability Distribution"),
-            )
-            if p:
-                paths["scenarios"] = p
+            try:
+                p = scenario_probability_chart(
+                    data["scenarios"][:10],
+                    config.REPORTS_DIR / "chart_scenarios.png",
+                    title=data.get("scenario_title", "Scenario Probability Distribution"),
+                )
+                if p:
+                    paths["scenarios"] = p
+            except Exception as e:
+                logger.warning(f"[reporter] scenario_probability_chart failed (skipping): {e}")
 
         if "market_impacts" in data:
-            p = market_impact_chart(
-                data["market_impacts"][:12],
-                config.REPORTS_DIR / "chart_market_impact.png",
-                title=data.get("market_title", "Estimated Market Impact by Asset Class"),
-            )
-            if p:
-                paths["market_impacts"] = p
+            try:
+                p = market_impact_chart(
+                    data["market_impacts"][:12],
+                    config.REPORTS_DIR / "chart_market_impact.png",
+                    title=data.get("market_title", "Estimated Market Impact by Asset Class"),
+                )
+                if p:
+                    paths["market_impacts"] = p
+            except Exception as e:
+                logger.warning(f"[reporter] market_impact_chart failed (skipping): {e}")
 
         if "timeline" in data:
-            p = timeline_chart(
-                data["timeline"][:14],
-                config.REPORTS_DIR / "chart_timeline.png",
-                title=data.get("timeline_title", "Event Timeline"),
-            )
-            if p:
-                paths["timeline"] = p
+            try:
+                p = timeline_chart(
+                    data["timeline"][:14],
+                    config.REPORTS_DIR / "chart_timeline.png",
+                    title=data.get("timeline_title", "Event Timeline"),
+                )
+                if p:
+                    paths["timeline"] = p
+            except Exception as e:
+                logger.warning(f"[reporter] timeline_chart failed (skipping): {e}")
 
         logger.info(f"[reporter] Generated {len(paths)} chart(s): {list(paths.keys())}")
         return paths

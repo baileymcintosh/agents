@@ -31,6 +31,11 @@ def _save(fig: Any, path: Path) -> Path:
     return path
 
 
+def _safe_text(text: str) -> str:
+    """Escape characters that trigger matplotlib mathtext parsing (e.g. $, ^, _)."""
+    return text.replace("$", r"\$").replace("^", r"\^").replace("_", r"\_")
+
+
 def scenario_probability_chart(
     scenarios: list[dict[str, Any]],
     output_path: Path,
@@ -44,7 +49,7 @@ def scenario_probability_chart(
     if not HAS_MATPLOTLIB:
         return None
 
-    names = [s["name"] for s in scenarios]
+    names = [_safe_text(s["name"]) for s in scenarios]
     probs = [float(s["probability"]) for s in scenarios]
     colors = [s.get("color", "#3498db") for s in scenarios]
 
@@ -58,7 +63,7 @@ def scenario_probability_chart(
         )
 
     ax.set_xlabel("Probability (%)", fontsize=12)
-    ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
+    ax.set_title(_safe_text(title), fontsize=14, fontweight="bold", pad=15)
     ax.set_xlim(0, max(probs) * 1.2)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -103,10 +108,10 @@ def market_impact_chart(
         )
 
     ax.set_yticks(list(y_positions))
-    ax.set_yticklabels([a["name"] for a in assets], fontsize=11)
+    ax.set_yticklabels([_safe_text(a["name"]) for a in assets], fontsize=11)
     ax.axvline(x=0, color="black", linewidth=1)
     ax.set_xlabel("Estimated Price Impact (%)", fontsize=12)
-    ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
+    ax.set_title(_safe_text(title), fontsize=14, fontweight="bold", pad=15)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
@@ -138,8 +143,9 @@ def timeline_chart(
         color = severity_colors.get(event.get("severity", "medium"), "#3498db")
         ax.plot(i, 0, "o", color=color, markersize=14, zorder=3)
         offset = 0.3 if i % 2 == 0 else -0.7
+        label_text = _safe_text(f"{event['date']}\n{event['label']}")
         ax.annotate(
-            f"{event['date']}\n{event['label']}",
+            label_text,
             xy=(i, 0), xytext=(i, offset),
             fontsize=8, ha="center", va="center" if i % 2 == 0 else "top",
             arrowprops=dict(arrowstyle="-", color="#999999", lw=1),
@@ -149,7 +155,7 @@ def timeline_chart(
     ax.set_xticks([])
     ax.set_yticks([])
     ax.spines[:].set_visible(False)
-    ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
+    ax.set_title(_safe_text(title), fontsize=14, fontweight="bold", pad=20)
 
     legend_patches = [
         mpatches.Patch(color="#e74c3c", label="High severity"),
