@@ -16,6 +16,7 @@ A curated collection of the most important research on agentic AI workflows, com
 | [04_memory_context.md](04_memory_context.md) | Agent memory types & A-MEM | 4 memory types; cross-session memory is the biggest gap; A-MEM is the best implementation model |
 | [05_evaluation_benchmarks.md](05_evaluation_benchmarks.md) | Benchmarks & internal evals | Reliability > capability; define 5 internal evals; compounding error maths |
 | [06_human_oversight.md](06_human_oversight.md) | HITL & approval gates | Gate at publication boundary, not process steps; adaptive HITL reduces interruptions 60-80% |
+| [sources.md](sources.md) | Primary-source reading list | Annotated list of 30+ papers and posts, with why each matters for AgentOrg |
 | **[SYNTHESIS.md](SYNTHESIS.md)** | **Our roadmap recommendations** | **Read this first — 4-phase improvement roadmap based on the research** |
 
 ---
