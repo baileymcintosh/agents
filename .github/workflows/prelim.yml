@@ -4,12 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       project_name:
-        description: "Project repo name (must exist at github.com/baileymcintosh/<name>)"
+        description: "Topic slug (e.g. iran-us-economy-2026) — a unique run suffix is auto-appended"
         required: true
         type: string
       brief:
         description: "Research brief"
         required: true
+        type: string
+      repo_name:
+        description: "Override repo name (optional — use to continue work in an existing repo)"
+        required: false
         type: string
 
 env:
@@ -40,41 +44,73 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync
 
-      - name: Clone project repo
+      - name: Resolve repo name
+        id: repo
+        env:
+          TOPIC: ${{ github.event.inputs.project_name }}
+          OVERRIDE: ${{ github.event.inputs.repo_name }}
+          RUN_NUM: ${{ github.run_number }}
+        run: |
+          if [ -n "$OVERRIDE" ]; then
+            REPO_NAME="$OVERRIDE"
+          else
+            REPO_NAME="${TOPIC}-run${RUN_NUM}"
+          fi
+          echo "REPO_NAME=$REPO_NAME" >> "$GITHUB_ENV"
+          echo "repo_name=$REPO_NAME" >> "$GITHUB_OUTPUT"
+          echo "Repo: $REPO_NAME"
+
+      - name: Create or clone project repo
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-          PROJECT_NAME: ${{ github.event.inputs.project_name }}
         run: |
           mkdir -p /tmp/projects
-          git clone "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${PROJECT_NAME}.git" /tmp/projects/${PROJECT_NAME}
-          cd /tmp/projects/${PROJECT_NAME}
+          # Try to clone; if repo doesn't exist yet, create it via API then clone
+          if git clone "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${REPO_NAME}.git" /tmp/projects/${REPO_NAME} 2>/dev/null; then
+            echo "Cloned existing repo"
+          else
+            echo "Creating new repo via GitHub API"
+            curl -s -X POST \
+              -H "Authorization: token ${PAT_TOKEN}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              https://api.github.com/user/repos \
+              -d "{\"name\":\"${REPO_NAME}\",\"private\":false,\"auto_init\":false}" \
+              | grep -E '"full_name"|"html_url"' | head -2
+            sleep 3
+            git clone "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${REPO_NAME}.git" /tmp/projects/${REPO_NAME}
+          fi
+          cd /tmp/projects/${REPO_NAME}
           git config user.name "AgentOrg Bot"
           git config user.email "agentorg-bot@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${PROJECT_NAME}.git"
+          git remote set-url origin "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${REPO_NAME}.git"
           mkdir -p reports data notebooks
+          # Seed an initial commit so origin/main exists before the pipeline pushes
+          git checkout -b main 2>/dev/null || git checkout main
+          echo "${{ github.event.inputs.brief }}" > BRIEF.md
+          git add .
+          git diff --staged --quiet || git commit -m "init: project setup"
+          git push --set-upstream origin main 2>/dev/null || true
 
       - name: Write brief
         env:
-          PROJECT_NAME: ${{ github.event.inputs.project_name }}
           BRIEF: ${{ github.event.inputs.brief }}
-        run: echo "$BRIEF" > /tmp/projects/${PROJECT_NAME}/BRIEF.md
+        run: echo "$BRIEF" > /tmp/projects/${REPO_NAME}/BRIEF.md
 
       - name: Bootstrap session state
         env:
-          PROJECT_NAME: ${{ github.event.inputs.project_name }}
           BRIEF: ${{ github.event.inputs.brief }}
         run: |
           python3 - <<'PYEOF'
           import json, datetime, os
           from pathlib import Path
-          project_name = os.environ["PROJECT_NAME"]
+          repo_name = os.environ["REPO_NAME"]
           brief = os.environ["BRIEF"]
           session = {
-              "name": project_name,
+              "name": repo_name,
               "brief": brief,
-              "project_dir": f"/tmp/projects/{project_name}",
-              "github_repo": f"baileymcintosh/{project_name}",
-              "github_url": f"https://github.com/baileymcintosh/{project_name}",
+              "project_dir": f"/tmp/projects/{repo_name}",
+              "github_repo": f"baileymcintosh/{repo_name}",
+              "github_url": f"https://github.com/baileymcintosh/{repo_name}",
               "phase": "planning",
               "team": ["qual_builder", "quant_builder"],
               "completed_phases": [],
@@ -89,21 +125,16 @@ jobs:
               "publication_approval_updated_at": "",
           }
           Path("SESSION.json").write_text(json.dumps(session, indent=2))
-          print(f"Session bootstrapped: {project_name}")
+          print(f"Session bootstrapped: {repo_name}")
           PYEOF
 
       - name: Run prelim pipeline
         # Full canonical path: collaborative qual+quant session → critic → verifier → reporter → qa_editor
-        env:
-          PROJECT_NAME: ${{ github.event.inputs.project_name }}
-          RUN_ID: ${{ github.run_id }}
         run: |
-          RUN_DIR="/tmp/projects/${PROJECT_NAME}/runs/prelim_$(date +%Y%m%d_%H%M%S)"
+          RUN_DIR="/tmp/projects/${REPO_NAME}/runs/prelim_$(date +%Y%m%d_%H%M%S)"
           mkdir -p "$RUN_DIR"
           REPORTS_DIR="$RUN_DIR" uv run agentorg prelim
 
       - name: Summary
         if: always()
-        env:
-          PROJECT_NAME: ${{ github.event.inputs.project_name }}
-        run: echo "Results at https://github.com/baileymcintosh/${PROJECT_NAME}"
+        run: echo "Results at https://github.com/baileymcintosh/${REPO_NAME}"

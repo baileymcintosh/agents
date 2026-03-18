@@ -66,12 +66,18 @@ def push(project_dir: Path, message: str = "chore: update") -> None:
         _run(["git", "commit", "-m", message], cwd=project_dir)
 
     remotes = subprocess.run(["git", "remote"], cwd=project_dir, capture_output=True, text=True, check=False)
-    if "origin" in remotes.stdout.split():
-        _run(["git", "pull", "--rebase", "origin", "main"], cwd=project_dir)
-        _run(["git", "push"], cwd=project_dir)
-        logger.info(f"[project_manager] Pushed -> {project_dir.name}")
-    else:
+    if "origin" not in remotes.stdout.split():
         logger.info(f"[project_manager] No git remote configured for {project_dir.name}; push skipped")
+        return
+    # Check whether origin/main exists (empty repo has no branches yet)
+    ls_remote = subprocess.run(
+        ["git", "ls-remote", "--heads", "origin", "main"],
+        cwd=project_dir, capture_output=True, text=True, check=False,
+    )
+    if ls_remote.stdout.strip():
+        _run(["git", "pull", "--rebase", "origin", "main"], cwd=project_dir)
+    _run(["git", "push", "--set-upstream", "origin", "main"], cwd=project_dir)
+    logger.info(f"[project_manager] Pushed -> {project_dir.name}")
 
 
 def _create_github_repo(project_name: str, description: str, project_dir: Path) -> str:

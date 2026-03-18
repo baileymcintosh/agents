@@ -4,11 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       project_name:
-        description: "Project repo name (must exist at github.com/baileymcintosh/<name>)"
+        description: "Topic slug OR existing repo name to continue (e.g. iran-us-economy-2026-run5)"
         required: true
         type: string
       feedback:
         description: "Feedback from prelim run to incorporate (optional)"
+        required: false
+        type: string
+      repo_name:
+        description: "Override repo name (optional — if omitted, auto-appends run number to project_name)"
         required: false
         type: string
 
@@ -45,44 +49,71 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends pandoc texlive-xetex texlive-fonts-recommended fonts-dejavu
 
-      - name: Clone project repo
+      - name: Resolve repo name
+        id: repo
+        env:
+          TOPIC: ${{ github.event.inputs.project_name }}
+          OVERRIDE: ${{ github.event.inputs.repo_name }}
+          RUN_NUM: ${{ github.run_number }}
+        run: |
+          if [ -n "$OVERRIDE" ]; then
+            REPO_NAME="$OVERRIDE"
+          else
+            REPO_NAME="${TOPIC}-run${RUN_NUM}"
+          fi
+          echo "REPO_NAME=$REPO_NAME" >> "$GITHUB_ENV"
+          echo "repo_name=$REPO_NAME" >> "$GITHUB_OUTPUT"
+          echo "Repo: $REPO_NAME"
+
+      - name: Create or clone project repo
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-          PROJECT_NAME: ${{ github.event.inputs.project_name }}
         run: |
           mkdir -p /tmp/projects
-          git clone "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${PROJECT_NAME}.git" /tmp/projects/${PROJECT_NAME}
-          cd /tmp/projects/${PROJECT_NAME}
+          if git clone "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${REPO_NAME}.git" /tmp/projects/${REPO_NAME} 2>/dev/null; then
+            echo "Cloned existing repo"
+          else
+            echo "Creating new repo via GitHub API"
+            curl -s -X POST \
+              -H "Authorization: token ${PAT_TOKEN}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              https://api.github.com/user/repos \
+              -d "{\"name\":\"${REPO_NAME}\",\"private\":false,\"auto_init\":false}" \
+              | grep -E '"full_name"|"html_url"' | head -2
+            sleep 3
+            git clone "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${REPO_NAME}.git" /tmp/projects/${REPO_NAME}
+          fi
+          cd /tmp/projects/${REPO_NAME}
           git config user.name "AgentOrg Bot"
           git config user.email "agentorg-bot@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${PROJECT_NAME}.git"
+          git remote set-url origin "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${REPO_NAME}.git"
           mkdir -p reports data notebooks
+          git checkout -b main 2>/dev/null || git checkout main
+          git add . && git diff --staged --quiet || git commit -m "init: project setup"
+          git push --set-upstream origin main 2>/dev/null || true
 
       - name: Write feedback file (if provided)
         if: ${{ github.event.inputs.feedback != '' }}
         env:
-          PROJECT_NAME: ${{ github.event.inputs.project_name }}
           FEEDBACK: ${{ github.event.inputs.feedback }}
-        run: echo "$FEEDBACK" > /tmp/projects/${PROJECT_NAME}/FEEDBACK.md
+        run: echo "$FEEDBACK" > /tmp/projects/${REPO_NAME}/FEEDBACK.md
 
       - name: Bootstrap session state
-        env:
-          PROJECT_NAME: ${{ github.event.inputs.project_name }}
         run: |
           python3 - <<'PYEOF'
           import json, datetime, os
           from pathlib import Path
-          project_name = os.environ["PROJECT_NAME"]
-          project_dir = Path(f"/tmp/projects/{project_name}")
+          repo_name = os.environ["REPO_NAME"]
+          project_dir = Path(f"/tmp/projects/{repo_name}")
           # Read brief from the cloned project repo
           brief_path = project_dir / "BRIEF.md"
           brief = brief_path.read_text().strip() if brief_path.exists() else ""
           session = {
-              "name": project_name,
+              "name": repo_name,
               "brief": brief,
               "project_dir": str(project_dir),
-              "github_repo": f"baileymcintosh/{project_name}",
-              "github_url": f"https://github.com/baileymcintosh/{project_name}",
+              "github_repo": f"baileymcintosh/{repo_name}",
+              "github_url": f"https://github.com/baileymcintosh/{repo_name}",
               "phase": "prelim",
               "team": ["qual_builder", "quant_builder"],
               "completed_phases": ["prelim"],
@@ -97,22 +128,19 @@ jobs:
               "publication_approval_updated_at": "",
           }
           Path("SESSION.json").write_text(json.dumps(session, indent=2))
-          print(f"Session bootstrapped: {project_name} (brief: {brief[:80]}...)")
+          print(f"Session bootstrapped: {repo_name} (brief: {brief[:80]}...)")
           PYEOF
 
       - name: Run deep pipeline
         # Full canonical path: collaborative qual+quant session → critic checkpoint →
         # verifier → reporter → qa_editor → publication approval
         env:
-          PROJECT_NAME: ${{ github.event.inputs.project_name }}
           FEEDBACK: ${{ github.event.inputs.feedback }}
         run: |
-          RUN_DIR="/tmp/projects/${PROJECT_NAME}/runs/deep_$(date +%Y%m%d_%H%M%S)"
+          RUN_DIR="/tmp/projects/${REPO_NAME}/runs/deep_$(date +%Y%m%d_%H%M%S)"
           mkdir -p "$RUN_DIR"
           REPORTS_DIR="$RUN_DIR" uv run agentorg iterate "$FEEDBACK"
 
       - name: Summary
         if: always()
-        env:
-          PROJECT_NAME: ${{ github.event.inputs.project_name }}
-        run: echo "Results at https://github.com/baileymcintosh/${PROJECT_NAME}"
+        run: echo "Results at https://github.com/baileymcintosh/${REPO_NAME}"
