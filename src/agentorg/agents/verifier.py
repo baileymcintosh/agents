@@ -110,6 +110,12 @@ class VerifierAgent(BaseAgent):
         if not dry_run:
             self.store.annotate_claim_statuses(updates)
             self.store.write_verification(verdict, report_content, findings)
+            if verdict != "PASS":
+                self.post_slack_progress(
+                    "🚨",
+                    "needs review",
+                    f"Verifier verdict {verdict}. {len(findings)} finding(s) require attention.",
+                )
 
         return {
             "status": "ok",

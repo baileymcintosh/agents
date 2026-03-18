@@ -2,7 +2,7 @@
 
 AgentOrg is an autonomous multi-agent research system for producing institutional-style research outputs from a short brief. The canonical execution path is now:
 
-`team_planner -> collaborative qual/quant session -> verifier -> reporter -> qa_editor -> approval`
+`team_planner -> memory-seeded collaborative qual/quant session -> verifier -> reporter -> qa_editor -> approval`
 
 The system is designed to run with minimal human involvement after the initial brief while preserving a structured audit trail of sources, claims, charts, and verification results.
 
@@ -13,10 +13,12 @@ The system is designed to run with minimal human involvement after the initial b
 3. **Preliminary cycle**: qual + quant run collaboratively with cheaper settings to validate sources, datasets, and output shape.
 4. **Deep cycle**: the same collaborative engine runs at fuller depth, expanding the agenda until time or open questions run out.
    In deep mode, a mid-session `critic` checkpoint runs after both builders complete turn 1 and adds adversarial follow-up agenda items.
+   Related prior projects can seed carry-forward questions into the agenda, and agenda items now carry rough `simple|complex|synthesis` difficulty tags.
 5. **Verification gate**: structured claims are checked against source records and data artifacts.
 6. **Reporting**: the reporter synthesizes only after verification passes, adds inline source tags from the evidence store, and appends a references table.
 7. **Editorial QA**: a `qa_editor` checks the finished report against the brief, verified claims, charts, and unresolved agenda items, then allows one bounded reporter revision pass.
 8. **Publication approval**: a persisted approval artifact records the final publish-ready state; `agentorg approval` inspects it and `agentorg approve` marks it approved.
+9. **Cross-session memory**: each completed project writes `project_memory.json`, and a shared `source_registry.json` tracks which sources have historically supported verified or flagged claims.
 
 ## Core Agents
 
@@ -39,6 +41,7 @@ The old sequential `planner -> builder -> verifier -> reporter` path is no longe
 - A shared evidence brief passed between qual and quant at each turn
 - A mid-session critic checkpoint in deep runs
 - A persisted evidence layer for sources, claims, and agenda state
+- Cross-session memory and source reputation across related projects
 - Verification based on structured provenance, not just markdown review
 - A reporter gate that blocks final synthesis when verification fails
 - A post-report QA editor that can request one revision pass before publication
@@ -55,6 +58,11 @@ Research artifacts are persisted under `reports/_state/`:
 
 This sits alongside `charts_manifest.json`, which remains the handoff between quant chart generation and reporting. The evidence store is now also read during the session: each builder receives a compact brief of the other builder's top claims and sources before each turn.
 
+Project-level memory artifacts are also persisted outside `reports/`:
+
+- `project_memory.json`: verified findings, useful sources, and unresolved high-priority questions from the completed run
+- `source_registry.json`: cross-project source reputation summary keyed by source URL/title
+
 ## Main Commands
 
 ```bash
@@ -63,6 +71,8 @@ agentorg prelim
 agentorg iterate "Incorporate this feedback"
 agentorg session --time-budget 2h
 agentorg status
+agentorg approval
+agentorg approve
 ```
 
 `prelim` and `iterate` now run the canonical collaborative pipeline through `runner.py`.
@@ -76,6 +86,7 @@ Each project directory contains:
   BRIEF.md
   PLAN.md
   FEEDBACK.md
+  project_memory.json
   reports/
     _state/
     *.md
@@ -86,7 +97,7 @@ Each project directory contains:
   notebooks/
 ```
 
-GitHub repo creation is optional and now controlled by environment variables rather than machine-specific path assumptions.
+The projects root also accumulates a shared `source_registry.json`. GitHub repo creation is optional and now controlled by environment variables rather than machine-specific path assumptions.
 
 ## Configuration
 
@@ -100,6 +111,7 @@ Important environment variables:
 - `AGENTORG_PROJECTS_ROOT`
 - `AGENTORG_CREATE_GITHUB_REPO`
 - `PUBLICATION_APPROVAL_REQUIRED`
+- `MEMORY_RETRIEVAL_LIMIT`
 
 ## Verification Notes
 

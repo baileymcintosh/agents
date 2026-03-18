@@ -92,6 +92,8 @@ def test_runner_skips_push_when_approval_required(temp_dir: Path) -> None:
     assert result["approval"]["status"] == "pending"
     assert session.publication_approval_status == "pending"
     assert (reports_dir / "_state" / "publication_approval.json").exists()
+    assert (project_dir / "project_memory.json").exists()
+    assert (temp_dir / "source_registry.json").exists()
 
 
 def test_cli_approval_commands(temp_dir: Path) -> None:

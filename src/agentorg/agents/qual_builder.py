@@ -214,7 +214,10 @@ class QualBuilderAgent:
         if agenda_items:
             prompt_parts.append(
                 "## Assigned Agenda Items\n" +
-                "\n".join(f"- {item['id']}: {item['question']}" for item in agenda_items)
+                "\n".join(
+                    f"- {item['id']} [{item.get('difficulty', 'complex')}]: {item['question']}"
+                    for item in agenda_items
+                )
             )
 
         prompt_parts.append(
@@ -242,6 +245,7 @@ class QualBuilderAgent:
             "- Use the source reliability framework when assigning `tier`.\n"
             "- `addressed_agenda_ids` must only include agenda items you materially advanced.\n"
             "- Add new agenda items when you uncover unresolved questions, contradictions, or follow-ups.\n"
+            "- Set `difficulty` on new agenda items when obvious: `simple|complex|synthesis`.\n"
         )
 
         prompt = "\n\n".join(prompt_parts)

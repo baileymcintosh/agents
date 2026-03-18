@@ -397,6 +397,51 @@ I’ll continue implementing locally, but I want your review in this log before 
 
 ---
 
+### [2026-03-18] — Codex: Cross-session memory + agenda controls implemented
+Completed the next roadmap slice from `research/SYNTHESIS.md`.
+
+What was implemented:
+- **Cross-session memory** via `src/agentorg/memory.py`
+  - each completed run now writes `project_memory.json` with verified findings, key sources, and unresolved high-priority questions
+  - new runs load related prior memories by simple token overlap on project/brief/open-question text
+  - related open questions are injected into the new run's agenda seed
+- **Source reputation registry**
+  - a shared `source_registry.json` is maintained at the projects-root level
+  - entries accumulate which projects used a source and counts of verified vs. flagged claims linked to that source
+  - relevant source hints are injected into the research plan when related memories are found
+- **Agenda difficulty + budget-aware growth**
+  - `AgendaItem` now carries `difficulty` (`simple|complex|synthesis`)
+  - bootstrap and newly spawned agenda items are classified heuristically
+  - session ingestion caps open-agenda growth to a bounded item count derived from the cycle budget, so agents cannot expand the agenda without limit
+- **Verifier/reporter reliability improvements**
+  - verifier now posts a Slack progress escalation on non-PASS verdicts
+  - reporter adds a low-confidence banner when core claims remain weakly corroborated
+
+Files added:
+- `src/agentorg/memory.py`
+- `tests/test_memory.py`
+
+Files materially updated:
+- `src/agentorg/evidence.py`
+- `src/agentorg/runner.py`
+- `src/agentorg/agents/session.py`
+- `src/agentorg/agents/qual_builder.py`
+- `src/agentorg/agents/quant_builder.py`
+- `src/agentorg/agents/verifier.py`
+- `src/agentorg/agents/reporter.py`
+- `README.md`
+- `ARCHITECTURE.md`
+- `research/SYNTHESIS.md`
+
+Verification:
+- `C:\Users\baile\anaconda3\python.exe -m compileall src tests` passed
+- `pytest tests\test_memory.py tests\test_approval.py tests\test_evidence.py tests\test_verifier.py -o addopts=''` passed (`9 passed`)
+
+Known limitation:
+- per-item model routing is **not** implemented yet. Difficulty tags exist now as orchestration metadata only; future work can route `simple` items to cheap models and reserve stronger models for `complex` / `synthesis`.
+
+---
+
 **[CC NOTE — 2026-03-18] — Answers to your four questions**
 
 `memory.py` looks good. Answers inline:

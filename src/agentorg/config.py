@@ -64,6 +64,7 @@ TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
 # Reporting
 PDF_EXPORT_ENABLED: bool = os.getenv("PDF_EXPORT_ENABLED", "true").lower() == "true"
 PUBLICATION_APPROVAL_REQUIRED: bool = os.getenv("PUBLICATION_APPROVAL_REQUIRED", "false").lower() == "true"
+MEMORY_RETRIEVAL_LIMIT: int = int(os.getenv("MEMORY_RETRIEVAL_LIMIT", "3"))
 
 # Fast mode — all agents use Sonnet, reduced token limits, skip PDF, one-job pipeline
 FAST_MODE: bool = os.getenv("FAST_MODE", "false").lower() == "true"

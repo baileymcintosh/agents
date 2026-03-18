@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from agentorg.evidence import EvidenceStore, extract_json_block
+from agentorg.evidence import (
+    EvidenceStore,
+    classify_agenda_difficulty,
+    extract_json_block,
+)
 
 
 def test_extract_json_block_returns_clean_text_and_payload() -> None:
@@ -54,3 +58,10 @@ def test_evidence_store_bootstrap_and_ingest(temp_dir) -> None:
     assert len(store.sources()) == 1
     assert len(store.claims()) == 1
     assert any(item.owner == "quant" for item in store.agenda())
+    assert any(item.difficulty == "simple" for item in store.agenda())
+
+
+def test_agenda_difficulty_classification() -> None:
+    assert classify_agenda_difficulty("Fetch Brent crude prices from FRED") == "simple"
+    assert classify_agenda_difficulty("Synthesize macro implications for US policy") == "synthesis"
+    assert classify_agenda_difficulty("Assess escalation risk from the latest diplomacy") == "complex"

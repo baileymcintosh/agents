@@ -210,7 +210,10 @@ class QuantBuilderAgent:
         if agenda_items:
             prompt_parts.append(
                 "## Assigned Agenda Items\n" +
-                "\n".join(f"- {item['id']}: {item['question']}" for item in agenda_items)
+                "\n".join(
+                    f"- {item['id']} [{item.get('difficulty', 'complex')}]: {item['question']}"
+                    for item in agenda_items
+                )
             )
 
         prompt_parts.append(
@@ -238,6 +241,7 @@ class QuantBuilderAgent:
             "- Every chart-supported or numeric statement in prose must appear in claims.\n"
             "- Use `source_type: dataset` for yfinance/FRED/EIA style inputs.\n"
             "- `addressed_agenda_ids` must only include agenda items you materially advanced.\n"
+            "- Set `difficulty` on new agenda items when obvious: `simple|complex|synthesis`.\n"
         )
 
         prompt = "\n\n".join(prompt_parts)

@@ -22,6 +22,7 @@ SourceTier = Literal[
 AgendaOwner = Literal["qual", "quant", "shared"]
 AgendaPriority = Literal["high", "medium", "low"]
 AgendaStatus = Literal["open", "in_progress", "done"]
+AgendaDifficulty = Literal["simple", "complex", "synthesis"]
 
 
 def _now_iso() -> str:
@@ -74,6 +75,10 @@ def priority_rank(priority: AgendaPriority) -> int:
     return {"high": 0, "medium": 1, "low": 2}[priority]
 
 
+def difficulty_rank(difficulty: str) -> int:
+    return {"simple": 0, "complex": 1, "synthesis": 2}.get(difficulty, 1)
+
+
 def tier_rank(tier: str) -> int:
     return {
         "tier1_primary": 1,
@@ -83,6 +88,23 @@ def tier_rank(tier: str) -> int:
         "tier4_expert": 4,
         "tier5_unverified": 5,
     }.get(tier, 99)
+
+
+def classify_agenda_difficulty(text: str) -> AgendaDifficulty:
+    ll = text.lower()
+    simple_markers = (
+        "price", "prices", "chart", "fetch", "retrieve", "download", "series",
+        "fred", "ticker", "dataset", "table", "timeline", "count", "list",
+    )
+    synthesis_markers = (
+        "synthesize", "implications", "thesis", "scenario", "compare perspectives",
+        "conclusion", "recommendation", "memo", "outlook", "weight the evidence",
+    )
+    if any(token in ll for token in synthesis_markers):
+        return "synthesis"
+    if any(token in ll for token in simple_markers):
+        return "simple"
+    return "complex"
 
 
 @dataclass
@@ -128,6 +150,7 @@ class AgendaItem:
     question: str
     owner: str
     priority: str = "medium"
+    difficulty: str = "complex"
     status: str = "open"
     created_by: str = "system"
     note: str = ""
@@ -195,16 +218,26 @@ class EvidenceStore:
                     question=clean,
                     owner=agenda_owner_from_text(clean),
                     priority="high",
+                    difficulty=classify_agenda_difficulty(clean),
                     created_by=created_by,
                 )
             )
             known.add(clean.lower())
         self.save_agenda(existing)
 
-    def add_agenda_items(self, items: list[dict[str, Any]], created_by: str) -> None:
+    def add_agenda_items(
+        self,
+        items: list[dict[str, Any]],
+        created_by: str,
+        max_open_items: int | None = None,
+    ) -> None:
         agenda = self.agenda()
         known = {item.question.strip().lower() for item in agenda}
         for item in items:
+            if max_open_items is not None:
+                open_count = sum(1 for existing in agenda if existing.status != "done")
+                if open_count >= max_open_items:
+                    break
             question = str(item.get("question", "")).strip()
             if not question or question.lower() in known:
                 continue
@@ -212,12 +245,16 @@ class EvidenceStore:
             priority = str(item.get("priority", "medium")).strip().lower()
             if priority not in {"high", "medium", "low"}:
                 priority = "medium"
+            difficulty = str(item.get("difficulty", classify_agenda_difficulty(question))).strip().lower()
+            if difficulty not in {"simple", "complex", "synthesis"}:
+                difficulty = classify_agenda_difficulty(question)
             agenda.append(
                 AgendaItem(
                     id=_slug_id("A"),
                     question=question,
                     owner=owner,
                     priority=priority,
+                    difficulty=difficulty,
                     created_by=created_by,
                     note=str(item.get("note", "")).strip(),
                 )
@@ -254,7 +291,13 @@ class EvidenceStore:
             item for item in self.agenda()
             if item.status != "done" and item.owner in {owner, "shared"}
         ]
-        agenda.sort(key=lambda item: (priority_rank(item.priority), item.created_at))
+        agenda.sort(
+            key=lambda item: (
+                priority_rank(item.priority),
+                difficulty_rank(item.difficulty),
+                item.created_at,
+            )
+        )
         return agenda[:limit]
 
     def unresolved_count(self) -> int:
@@ -298,6 +341,14 @@ class EvidenceStore:
         raw = self._load_json(self.verification_path)
         return raw if isinstance(raw, dict) else {}
 
+    def high_priority_open_items(self, limit: int = 10) -> list[AgendaItem]:
+        items = [
+            item for item in self.agenda()
+            if item.status != "done" and item.priority == "high"
+        ]
+        items.sort(key=lambda item: (difficulty_rank(item.difficulty), item.created_at))
+        return items[:limit]
+
     def write_verification(self, verdict: str, summary: str, findings: list[dict[str, Any]]) -> None:
         payload = {
             "verdict": verdict,
@@ -313,6 +364,7 @@ class EvidenceStore:
         payload: dict[str, Any],
         report_path: Path,
         artifact_paths: list[str] | None = None,
+        max_open_items: int | None = None,
     ) -> dict[str, int]:
         artifact_paths = artifact_paths or []
         sources = self.sources()
@@ -386,7 +438,11 @@ class EvidenceStore:
         self.save_sources(sources)
         self.save_claims(claims)
         self.mark_agenda_done([str(item_id).strip() for item_id in payload.get("addressed_agenda_ids", [])])
-        self.add_agenda_items(payload.get("new_agenda_items", []), created_by=agent_role)
+        self.add_agenda_items(
+            payload.get("new_agenda_items", []),
+            created_by=agent_role,
+            max_open_items=max_open_items,
+        )
         return {"sources": len(payload.get("sources", [])), "claims": len(payload.get("claims", []))}
 
     def annotate_claim_statuses(self, updates: dict[str, tuple[str, str]]) -> None:

@@ -91,19 +91,24 @@ This is distinct from our current prelim/deep model selection, which applies at 
 **Goal:** Each project benefits from prior projects.
 
 1. **Project memory file.** Write `project_memory.json` at session close with key sources, verified findings, and open questions.
+   Status: implemented in the current repo pass.
 
 2. **Memory-seeded agenda.** When a new project is similar to a prior one (same domain, overlapping topics), load the prior open questions as seed agenda items.
+   Status: implemented in the current repo pass.
 
 3. **Source reputation registry.** A shared `source_registry.json` across all projects — sources that have been consistently Tier 1-2, sources that have been flagged by the verifier. Loaded at session start to weight source selection.
+   Status: implemented in lightweight form in the current repo pass.
 
 ### Phase 3: Adaptive Cost Routing (Following — 1 month)
 **Goal:** Cut deep run cost by 30-40% without quality loss.
 
 1. **Agenda item difficulty classification.** At bootstrap, classify each agenda item as `simple` / `complex` / `synthesis`. Store in `AgendaItem.difficulty`.
+   Status: implemented in the current repo pass.
 
 2. **Model selection per item.** `simple` → Groq Llama; `complex` → Claude Sonnet; `synthesis` → Claude Opus. The session loop passes the appropriate model config to each `run_turn()` call.
 
 3. **Dynamic agenda expansion cap.** Limit total agenda items per session to `budget / avg_item_cost` to prevent runaway sessions.
+   Status: implemented in simple capped form in the current repo pass; per-item cost routing remains future work.
 
 ### Phase 4: Publication Boundary HITL (Following — 2 weeks)
 **Goal:** Human signs off before any output leaves the system.

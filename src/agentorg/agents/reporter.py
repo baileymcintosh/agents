@@ -230,6 +230,18 @@ class ReporterAgent(BaseAgent):
             lines.append(f"| {source.id} | {source.title} | {source.tier} | {publisher} |")
         return "\n".join(lines)
 
+    def _confidence_banner(self) -> str:
+        low_confidence_core = [
+            claim for claim in self.store.claims()
+            if claim.materiality == "core" and claim.confidence < 0.6
+        ]
+        if not low_confidence_core:
+            return ""
+        return (
+            "> This report contains claims with limited source corroboration. "
+            "See verification artifacts for details.\n"
+        )
+
     def _export_pdf(self, report_path: Path) -> Path | None:
         import subprocess
         pdf_path = report_path.with_suffix(".pdf")
@@ -351,7 +363,8 @@ class ReporterAgent(BaseAgent):
 
         # Build markdown with ALL charts embedded + explained
         cited_summary = self._apply_inline_citations(summary)
-        md_with_charts = cited_summary
+        banner = self._confidence_banner()
+        md_with_charts = f"{banner}\n{cited_summary}" if banner else cited_summary
 
         # Insert reporter summary charts next to relevant sections
         if chart_paths:

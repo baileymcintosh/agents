@@ -5,6 +5,7 @@
 ```mermaid
 flowchart TD
     U([User / Bailey]) -->|brief| TP[team_planner]
+    MEM[(project_memory.json + source_registry.json)] --> S
     TP -->|writes PLAN.md| P[(project directory)]
     P --> S[collaborative session]
 
@@ -34,15 +35,17 @@ flowchart TD
 ## Execution Model
 
 - `team_planner` creates the initial agenda and project structure.
+- Related `project_memory.json` artifacts can seed carry-forward questions and source hints into the run.
 - `qual_builder` and `quant_builder` run as the active research pair.
 - At the start of each turn, each builder receives a compact brief of the other builder's top claims and sources from the shared evidence store.
 - Both builders emit prose plus a machine-readable `evidence_json` payload.
 - In deep mode, `critic` runs once after both builders finish turn 1 and adds high-priority challenge items back into the agenda.
-- The session persists sources, claims, and agenda items under `reports/_state/`.
+- The session persists sources, claims, and agenda items under `reports/_state/`, and agenda items now carry rough difficulty tags.
 - `verifier` checks claim provenance and quantitative artifact coverage.
 - `reporter` only synthesizes after verifier verdict `PASS`, injects inline source tags where possible, and appends a references section from `sources.json`.
 - `qa_editor` reviews the finished report against the brief, verified claims, charts, and unresolved agenda items; if needed it requests one bounded reporter rewrite.
 - `publication approval` persists the publication-boundary state and gives the operator a final inspect/approve step before the push boundary.
+- At run end, the system writes `project_memory.json` and updates the shared `source_registry.json`.
 
 ## Agent Roles
 
@@ -56,6 +59,7 @@ flowchart TD
 | `reporter` | concise synthesis | full memo + notebook/PDF | Final reporting with evidence-backed citations |
 | `qa_editor` | lightweight or skipped by workflow choice | final publication QA | Brief coverage, chart coverage, narrative alignment, formatting |
 | `publication approval` | pending | approved | Persisted publish boundary / operator sign-off |
+| `project memory` | prior runs reused selectively | prior runs reused selectively | Cross-session retrieval of verified findings, open questions, and source hints |
 | `debugger` | recovery | recovery | Failure diagnosis and retry guidance |
 
 ## Persisted State
@@ -78,6 +82,8 @@ reports/
   *_reporter_*.md
   publication_approval.json
   publication_approval.md
+project_memory.json
+source_registry.json
 ```
 
 ## Verification Rules
@@ -96,3 +102,4 @@ The current verifier enforces:
 - The critic checkpoint is implemented with explicit thread events rather than a hard barrier so the session can degrade cleanly if one worker exits early or errors.
 - These root docs are the primary user-facing architecture references and should be updated whenever the execution path changes.
 - `agentorg approval` and `agentorg approve` are the user-facing entrypoints for the publication boundary.
+- `source_registry.json` currently lives at the projects-root level so related projects can share source reputation without coupling it to this repo's local state.

@@ -20,6 +20,14 @@ from agentorg.agents.qa_editor import QAEditorAgent
 from agentorg.agents.reporter import ReporterAgent
 from agentorg.agents.session import run_collaborative_session
 from agentorg.agents.verifier import VerifierAgent
+from agentorg.memory import (
+    build_memory_context,
+    load_relevant_memories,
+    memory_seed_questions,
+    source_registry_guidance,
+    update_source_registry,
+    write_project_memory,
+)
 
 
 PRELIM_MODEL_OVERRIDES: dict[str, Any] = {
@@ -53,14 +61,30 @@ def _run_project_cycle(
     goals = _extract_goals(plan_text, mode)
     time_budget = "8m" if mode == "prelim" else (config.TIME_BUDGET or "60m")
     max_cycles = 2 if mode == "prelim" else max(config.SESSION_COLLAB_TURNS, 6)
+    related_memories = load_relevant_memories(
+        project_dir=project_dir,
+        project_name=session.name,
+        brief=brief,
+        limit=config.MEMORY_RETRIEVAL_LIMIT,
+    )
+    agenda_seed = goals or ["Produce a defensible synthesis with claims, sources, and charts."]
+    seeded_questions = memory_seed_questions(related_memories)
+    existing_questions = {question.strip().lower() for question in agenda_seed}
+    for question in seeded_questions:
+        key = question.strip().lower()
+        if key not in existing_questions:
+            agenda_seed.append(question)
+            existing_questions.add(key)
 
     research_plan = _compose_research_plan(
         project_name=session.name,
         brief=brief,
         plan_text=plan_text,
-        goals=goals,
+        goals=agenda_seed,
         mode=mode,
         feedback=feedback,
+        memory_context=build_memory_context(related_memories),
+        source_guidance=source_registry_guidance(project_dir, related_memories),
     )
 
     with _project_runtime(project_dir=project_dir, reports_dir=reports_dir, mode=mode, time_budget=time_budget):
@@ -68,14 +92,15 @@ def _run_project_cycle(
         logger.info(f"[runner] Starting canonical {mode} cycle for '{session.name}'")
         session_result = run_collaborative_session(
             research_plan=research_plan,
-            agenda_seed=goals or ["Produce a defensible synthesis with claims, sources, and charts."],
+            agenda_seed=agenda_seed,
             time_budget=time_budget,
             max_cycles=max_cycles,
             mode=mode,
             dry_run=False,
         )
 
-        verifier_result = VerifierAgent().run(dry_run=False)
+        verifier = VerifierAgent()
+        verifier_result = verifier.run(dry_run=False)
         outputs = [
             session_result.get("qual_report"),
             session_result.get("quant_report"),
@@ -141,6 +166,14 @@ def _run_project_cycle(
             logger.warning(
                 f"[runner] Reporter skipped because verifier verdict was {verifier_result.get('verdict')}"
             )
+        memory_path = write_project_memory(
+            project_dir=project_dir,
+            project_name=session.name,
+            brief=brief,
+            store=verifier.store,
+        )
+        registry_path = update_source_registry(project_dir=project_dir, store=verifier.store)
+        outputs.extend([str(memory_path), str(registry_path)])
         if approval_result and approval_result.is_pending():
             logger.info("[runner] Publication approval required; skipping auto-push")
         else:
@@ -181,6 +214,8 @@ def _compose_research_plan(
     goals: list[str],
     mode: str,
     feedback: str,
+    memory_context: str = "",
+    source_guidance: str = "",
 ) -> str:
     goals_block = "\n".join(f"- {goal}" for goal in goals) or "- Produce the highest-value missing research."
     plan_parts = [
@@ -196,6 +231,10 @@ def _compose_research_plan(
     ]
     if plan_text:
         plan_parts.extend(["", "## Team Planner Plan", plan_text])
+    if memory_context:
+        plan_parts.extend(["", memory_context])
+    if source_guidance:
+        plan_parts.extend(["", source_guidance])
     if feedback:
         plan_parts.extend(["", "## Feedback", feedback])
     return "\n".join(plan_parts)

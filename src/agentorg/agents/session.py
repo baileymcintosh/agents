@@ -41,6 +41,7 @@ class CollaborativeSession:
         self.clock = clock
         self.mode = mode
         self.max_cycles = max_cycles or config.SESSION_COLLAB_TURNS
+        self.agenda_item_cap = max(6, self.max_cycles * 4)
         self.messenger = AgentMessenger(config.REPORTS_DIR)
         self.evidence = EvidenceStore(config.REPORTS_DIR)
         self.evidence.bootstrap_agenda(agenda_seed)
@@ -127,7 +128,10 @@ class CollaborativeSession:
                     research_plan=self.research_plan,
                     messenger=self.messenger,
                     completed_sections=completed_sections,
-                    agenda_items=[{"id": item.id, "question": item.question} for item in agenda_items],
+                    agenda_items=[
+                        {"id": item.id, "question": item.question, "difficulty": item.difficulty}
+                        for item in agenda_items
+                    ],
                     partner_evidence_brief=partner_evidence_brief,
                     clock_context=clock_ctx,
                 )
@@ -136,6 +140,7 @@ class CollaborativeSession:
                     agent_role="qual_builder",
                     payload=result.get("payload", {}),
                     report_path=report_path,
+                    max_open_items=self.agenda_item_cap,
                 )
                 if turn == 1:
                     self._qual_turn1_done.set()
@@ -169,7 +174,10 @@ class CollaborativeSession:
                     turn=turn,
                     research_plan=self.research_plan,
                     messenger=self.messenger,
-                    agenda_items=[{"id": item.id, "question": item.question} for item in agenda_items],
+                    agenda_items=[
+                        {"id": item.id, "question": item.question, "difficulty": item.difficulty}
+                        for item in agenda_items
+                    ],
                     partner_evidence_brief=partner_evidence_brief,
                     clock_context=clock_ctx,
                 )
@@ -179,6 +187,7 @@ class CollaborativeSession:
                     payload=result.get("payload", {}),
                     report_path=report_path,
                     artifact_paths=result.get("charts", []),
+                    max_open_items=self.agenda_item_cap,
                 )
                 if turn == 1:
                     self._quant_turn1_done.set()
