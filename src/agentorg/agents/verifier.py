@@ -60,7 +60,12 @@ class VerifierAgent(BaseAgent):
                     f"tier 1-3 source{'s' if min_sources > 1 else ''}."
                 )
 
-            if not linked_sources and not claim.artifact_paths:
+            # Track whether this claim has NO sources at all (separate from having
+            # insufficient tier 1-3 sources). Zero-source claims are often caused by
+            # search infrastructure failures (e.g. Tavily quota exhaustion) rather than
+            # research quality issues, so they are always treated as soft failures.
+            has_no_sources = not linked_sources and not claim.artifact_paths
+            if has_no_sources:
                 issues.append("Claim has no linked sources or data artifacts.")
 
             if claim.agent_role == "quant_builder":
@@ -71,7 +76,13 @@ class VerifierAgent(BaseAgent):
                 issues.append("Core claim confidence is below 0.5.")
 
             if issues:
-                severity = "high" if claim.materiality == "core" else "medium"
+                # "No sources at all" is always a soft failure — often caused by search
+                # infrastructure being down, not by low-quality research.
+                # Other issues on core claims are hard failures.
+                if has_no_sources and len(issues) == 1:
+                    severity = "medium"
+                else:
+                    severity = "high" if claim.materiality == "core" else "medium"
                 findings.append(
                     {
                         "severity": severity,

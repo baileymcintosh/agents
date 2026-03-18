@@ -1,8 +1,9 @@
-"""Web search tool for agents — uses Tavily API (built for AI agents)."""
+"""Web search tool for agents — uses Tavily API with DuckDuckGo fallback."""
 
 from __future__ import annotations
 
 import os
+import urllib.parse
 from typing import Any
 
 import httpx
@@ -17,10 +18,51 @@ except ImportError:  # pragma: no cover - minimal test environment fallback
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 TAVILY_URL = "https://api.tavily.com/search"
 
+# Module-level flag so we stop retrying Tavily after a quota error this session
+_TAVILY_QUOTA_EXCEEDED = False
+
+
+def _duckduckgo_search(query: str, max_results: int = 8) -> list[dict[str, Any]]:
+    """Fallback search via DuckDuckGo Instant Answer API (no API key required)."""
+    try:
+        encoded = urllib.parse.quote_plus(query)
+        url = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_redirect=1&no_html=1&skip_disambig=1"
+        resp = httpx.get(url, timeout=15.0, follow_redirects=True)
+        resp.raise_for_status()
+        data = resp.json()
+
+        results: list[dict[str, Any]] = []
+
+        # AbstractText (main answer)
+        if data.get("AbstractText"):
+            results.append({
+                "title": data.get("Heading", query),
+                "url": data.get("AbstractURL", ""),
+                "content": data["AbstractText"],
+                "score": 0.9,
+            })
+
+        # RelatedTopics
+        for topic in data.get("RelatedTopics", [])[:max_results]:
+            if isinstance(topic, dict) and topic.get("Text"):
+                icon = topic.get("Icon", {}) or {}
+                results.append({
+                    "title": topic.get("Text", "")[:80],
+                    "url": topic.get("FirstURL", ""),
+                    "content": topic.get("Text", ""),
+                    "score": 0.6,
+                })
+
+        logger.info(f"[search] DuckDuckGo fallback '{query}' → {len(results)} results")
+        return results[:max_results]
+    except Exception as e:
+        logger.warning(f"[search] DuckDuckGo fallback failed: {e}")
+        return []
+
 
 def web_search(query: str, max_results: int = 8, search_depth: str = "advanced") -> list[dict[str, Any]]:
     """
-    Search the web using Tavily and return structured results.
+    Search the web using Tavily, falling back to DuckDuckGo if quota is exceeded.
 
     Args:
         query: The search query
@@ -30,36 +72,49 @@ def web_search(query: str, max_results: int = 8, search_depth: str = "advanced")
     Returns:
         List of result dicts with keys: title, url, content, score
     """
+    global _TAVILY_QUOTA_EXCEEDED
+
     if not TAVILY_API_KEY:
-        logger.warning("[search] TAVILY_API_KEY not set — web search disabled.")
-        return [{"title": "Web search unavailable", "url": "", "content": "TAVILY_API_KEY is not configured.", "score": 0}]
+        logger.warning("[search] TAVILY_API_KEY not set — falling back to DuckDuckGo.")
+        return _duckduckgo_search(query, max_results)
 
-    try:
-        response = httpx.post(
-            TAVILY_URL,
-            json={
-                "api_key": TAVILY_API_KEY,
-                "query": query,
-                "max_results": max_results,
-                "search_depth": search_depth,
-                "include_answer": True,
-                "include_raw_content": False,
-            },
-            timeout=30.0,
-        )
-        response.raise_for_status()
-        data = response.json()
+    if not _TAVILY_QUOTA_EXCEEDED:
+        try:
+            response = httpx.post(
+                TAVILY_URL,
+                json={
+                    "api_key": TAVILY_API_KEY,
+                    "query": query,
+                    "max_results": max_results,
+                    "search_depth": search_depth,
+                    "include_answer": True,
+                    "include_raw_content": False,
+                },
+                timeout=30.0,
+            )
+            if response.status_code == 432:
+                logger.warning("[search] Tavily quota exceeded (HTTP 432) — switching to DuckDuckGo for this session.")
+                _TAVILY_QUOTA_EXCEEDED = True
+            else:
+                response.raise_for_status()
+                data = response.json()
+                results = data.get("results", [])
+                logger.info(f"[search] Tavily '{query}' → {len(results)} results")
+                return list(results)
+        except httpx.HTTPStatusError:
+            pass  # fall through to DuckDuckGo
+        except httpx.HTTPError as e:
+            logger.error(f"[search] Tavily HTTP error: {e}")
+        except Exception as e:
+            logger.error(f"[search] Tavily unexpected error: {e}")
 
-        results = data.get("results", [])
-        logger.info(f"[search] '{query}' → {len(results)} results")
-        return list(results)
+    # Tavily failed or quota exceeded — use DuckDuckGo
+    ddg_results = _duckduckgo_search(query, max_results)
+    if ddg_results:
+        return ddg_results
 
-    except httpx.HTTPError as e:
-        logger.error(f"[search] HTTP error: {e}")
-        return []
-    except Exception as e:
-        logger.error(f"[search] Unexpected error: {e}")
-        return []
+    logger.warning(f"[search] All search backends failed for '{query}'")
+    return []
 
 
 def format_search_results(results: list[dict[str, Any]]) -> str:
