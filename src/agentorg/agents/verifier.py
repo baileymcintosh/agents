@@ -51,8 +51,14 @@ class VerifierAgent(BaseAgent):
                 and (has_dataset or claim.artifact_paths)
             )
 
-            if claim.materiality == "core" and len(corroborating) < 2 and not quant_has_provenance:
-                issues.append("Core claim lacks two independent tier 1-3 sources.")
+            # In fast/prelim mode, accept 1 tier 1-3 source (cheap models are less thorough).
+            # In deep mode, require 2 independent sources for full corroboration.
+            min_sources = 1 if config.FAST_MODE else 2
+            if claim.materiality == "core" and len(corroborating) < min_sources and not quant_has_provenance:
+                issues.append(
+                    f"Core claim lacks {'one' if min_sources == 1 else 'two independent'} "
+                    f"tier 1-3 source{'s' if min_sources > 1 else ''}."
+                )
 
             if not linked_sources and not claim.artifact_paths:
                 issues.append("Claim has no linked sources or data artifacts.")
