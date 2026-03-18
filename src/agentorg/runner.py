@@ -118,7 +118,13 @@ def _run_project_cycle(
         reporter_result: dict[str, Any] | None = None
         qa_result: dict[str, Any] | None = None
         approval_result = None
-        if verifier_result.get("verdict") == "PASS":
+        # Allow NEEDS REVISION to proceed — soft failures (sourcing gaps, low confidence)
+        # should not block the entire report. The reporter notes them in the output.
+        # Only hard FAIL (no claims at all, or majority of core claims unsourced) blocks.
+        verifier_verdict = verifier_result.get("verdict", "FAIL")
+        if verifier_verdict in ("PASS", "NEEDS REVISION"):
+            if verifier_verdict == "NEEDS REVISION":
+                logger.warning("[runner] Verifier NEEDS REVISION — proceeding to reporter with findings noted")
             reporter_result = ReporterAgent().run(dry_run=False)
             try:
                 qa_result = QAEditorAgent(brief=brief, research_plan=research_plan).run(
@@ -199,7 +205,7 @@ def _run_project_cycle(
         "session": session_result,
         "verification": verifier_result,
         "reporter": reporter_result,
-        "qa_editor": qa_result if verifier_result.get("verdict") == "PASS" else None,
+        "qa_editor": qa_result if verifier_result.get("verdict") in ("PASS", "NEEDS REVISION") else None,
         "approval": approval_result.to_dict() if approval_result else None,
         "mode": mode,
         "elapsed_seconds": elapsed,
