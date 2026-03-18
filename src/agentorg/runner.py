@@ -262,6 +262,13 @@ def _project_runtime(
         config.FAST_MODE = PRELIM_MODEL_OVERRIDES["FAST_MODE"]
     else:
         config.FAST_MODE = False
+
+    # Clear evidence state so each run starts with a clean slate.
+    # Without this, claims/sources from prior runs accumulate and cause false
+    # verifier FAILs on the next run (e.g., old claims with no artifact_paths
+    # polluting the new run's quant provenance check).
+    _clear_evidence_state(reports_dir)
+
     try:
         yield
     finally:
@@ -270,6 +277,18 @@ def _project_runtime(
         config.TIME_BUDGET = previous["TIME_BUDGET"]
         config.QUAL_BUILDER_MODEL = previous["QUAL_BUILDER_MODEL"]
         config.VERIFIER_MODEL = previous["VERIFIER_MODEL"]
+
+
+def _clear_evidence_state(reports_dir: Path) -> None:
+    """Remove per-run evidence state files so each run starts clean."""
+    state_dir = reports_dir / "_state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    _EPHEMERAL_STATE = ("claims.json", "sources.json", "agenda.json", "verification.json")
+    for fname in _EPHEMERAL_STATE:
+        path = state_dir / fname
+        if path.exists():
+            path.unlink()
+            logger.info(f"[runner] Cleared stale state: {fname}")
 
 
 def _push(project_dir: Path, message: str) -> None:
