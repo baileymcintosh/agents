@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import os
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -354,12 +355,16 @@ def _organise_run_outputs(reports_dir: Path, project_dir: Path, reporter_result:
     if reporter_result:
         report_src = reporter_result.get("report", "")
         nb_src = reporter_result.get("notebook", "")
+        all_plots_src = reporter_result.get("all_plots", "")
         if report_src and Path(report_src).exists():
             shutil.copy2(report_src, project_dir / "report.md")
             logger.info(f"[runner] Latest report → report.md")
         if nb_src and Path(nb_src).exists():
             shutil.copy2(nb_src, project_dir / "report.ipynb")
             logger.info(f"[runner] Latest notebook → report.ipynb")
+        if all_plots_src and Path(all_plots_src).exists():
+            shutil.copy2(all_plots_src, project_dir / "all_plots.ipynb")
+            logger.info(f"[runner] All-plots notebook → all_plots.ipynb")
 
 
 def _clear_evidence_state(reports_dir: Path) -> None:

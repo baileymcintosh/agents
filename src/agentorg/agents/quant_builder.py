@@ -46,7 +46,7 @@ class QuantBuilderAgent:
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self.system_prompt = self._load_system_prompt()
         self.executor = PythonExecutor(timeout=90)
-        self.use_search = bool(config.TAVILY_API_KEY)
+        self.use_search = True  # always enabled; falls back to DuckDuckGo if Tavily quota exceeded
         self._all_findings: list[str] = []
         self._all_charts: list[str] = []
 

@@ -61,7 +61,17 @@ class TeamPlannerAgent(BaseAgent):
         """Read a brief, design a team, return structured plan."""
         logger.info("[team_planner] Designing team for brief...")
 
-        prompt = f"""You are a research director designing a custom agent team for a specific project.
+        prompt_path = config.AGENT_DOCS_DIR / "team_planner.md"
+        base_prompt = (
+            prompt_path.read_text(encoding="utf-8")
+            if prompt_path.exists()
+            else (
+                "You are a research director designing a custom agent team for a specific project.\n\n"
+                "Think carefully about what this task actually needs. A poker interface needs a coder. "
+                "A macro research project needs data_analyst + qual_builder. Don't over-staff — pick the right 3-5 agents."
+            )
+        )
+        prompt = f"""{base_prompt}
 
 Available agents:
 {chr(10).join(f'- {name}: {desc}' for name, desc in AVAILABLE_AGENTS.items())}
@@ -70,9 +80,6 @@ Task brief:
 {brief}
 
 {PLAN_SCHEMA}
-
-Think carefully about what this task actually needs. A poker interface needs a coder.
-A macro research project needs data_analyst + qual_builder. Don't over-staff — pick the right 3-5 agents.
 """
         raw = self.call_claude(prompt)
 
