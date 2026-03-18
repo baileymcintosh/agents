@@ -4,15 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       project_name:
-        description: "Project name (slug, no spaces)"
+        description: "Project repo name (must exist at github.com/baileymcintosh/<name>)"
         required: true
         type: string
       brief:
-        description: "Task brief"
-        required: true
-        type: string
-      team:
-        description: "Comma-separated agent roles e.g. qual_builder,quant_builder,reporter"
+        description: "Research brief"
         required: true
         type: string
 
@@ -24,17 +20,14 @@ env:
   FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
   EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  # Prelim model assignments — Groq (free) for qual/research, Sonnet for quant (needs tool use)
-  QUAL_BUILDER_MODEL: "llama-3.3-70b-versatile"
-  QUANT_BUILDER_MODEL: "claude-sonnet-4-6"
-  REPORTER_MODEL: "claude-sonnet-4-6"
-  TIME_BUDGET: "8m"
+  AGENTORG_PROJECTS_ROOT: /tmp/projects
+  AGENTORG_CREATE_GITHUB_REPO: "false"
 
 jobs:
   prelim:
     name: "Prelim: ${{ github.event.inputs.project_name }}"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: write
 
@@ -48,38 +41,63 @@ jobs:
       - run: uv sync
 
       - name: Clone project repo
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PROJECT_NAME: ${{ github.event.inputs.project_name }}
         run: |
-          git clone "https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/baileymcintosh/${{ github.event.inputs.project_name }}.git" /tmp/project
-          cd /tmp/project
+          mkdir -p /tmp/projects
+          git clone "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${PROJECT_NAME}.git" /tmp/projects/${PROJECT_NAME}
+          cd /tmp/projects/${PROJECT_NAME}
           git config user.name "AgentOrg Bot"
           git config user.email "agentorg-bot@users.noreply.github.com"
-          mkdir -p reports notebooks data
-          echo "${{ github.event.inputs.brief }}" > BRIEF.md
-          git add . && git diff --staged --quiet || git commit -m "init: project setup"
-          git push
+          git remote set-url origin "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${PROJECT_NAME}.git"
+          mkdir -p reports data notebooks
 
-      - name: Run preliminary agents
+      - name: Write brief
         env:
-          REPORTS_DIR: /tmp/project/reports
+          PROJECT_NAME: ${{ github.event.inputs.project_name }}
+          BRIEF: ${{ github.event.inputs.brief }}
+        run: echo "$BRIEF" > /tmp/projects/${PROJECT_NAME}/BRIEF.md
+
+      - name: Bootstrap session state
+        env:
+          PROJECT_NAME: ${{ github.event.inputs.project_name }}
+          BRIEF: ${{ github.event.inputs.brief }}
         run: |
-          TEAM="${{ github.event.inputs.team }}"
-          IFS=',' read -ra ROLES <<< "$TEAM"
+          python3 - <<'PYEOF'
+          import json, datetime, os
+          from pathlib import Path
+          project_name = os.environ["PROJECT_NAME"]
+          brief = os.environ["BRIEF"]
+          session = {
+              "name": project_name,
+              "brief": brief,
+              "project_dir": f"/tmp/projects/{project_name}",
+              "github_repo": f"baileymcintosh/{project_name}",
+              "github_url": f"https://github.com/baileymcintosh/{project_name}",
+              "phase": "planning",
+              "team": ["qual_builder", "quant_builder"],
+              "completed_phases": [],
+              "last_run": datetime.datetime.now().isoformat(),
+              "last_outputs": [],
+              "pending_feedback": "",
+              "notes": "",
+              "publication_approval_required": False,
+              "publication_approval_status": "",
+              "publication_approval_run_id": "",
+              "publication_approval_path": "",
+              "publication_approval_updated_at": "",
+          }
+          Path("SESSION.json").write_text(json.dumps(session, indent=2))
+          print(f"Session bootstrapped: {project_name}")
+          PYEOF
 
-          for role in "${ROLES[@]}"; do
-            role=$(echo "$role" | tr -d ' ')
-            if [ "$role" = "reporter" ]; then continue; fi
-            echo "=== $role ==="
-            uv run agentorg run "$role" --time-budget 8m || echo "$role error — continuing"
-          done
+      - name: Run prelim pipeline
+        # Full canonical path: collaborative qual+quant session → critic → verifier → reporter → qa_editor
+        run: uv run agentorg prelim
 
-          echo "=== reporter ==="
-          uv run agentorg run reporter --time-budget 4m || echo "reporter error"
-
-      - name: Push outputs to project repo
-        run: |
-          cd /tmp/project
-          git add .
-          git diff --staged --quiet || git commit -m "prelim: initial research outputs"
-          git pull --rebase origin main
-          git push
-          echo "Project repo: https://github.com/baileymcintosh/${{ github.event.inputs.project_name }}"
+      - name: Summary
+        if: always()
+        env:
+          PROJECT_NAME: ${{ github.event.inputs.project_name }}
+        run: echo "Results at https://github.com/baileymcintosh/${PROJECT_NAME}"

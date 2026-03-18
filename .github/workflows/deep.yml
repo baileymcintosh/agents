@@ -4,23 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       project_name:
-        description: "Project name (must match existing repo baileymcintosh/<project_name>)"
-        required: true
-        type: string
-      team:
-        description: "Comma-separated agent roles"
+        description: "Project repo name (must exist at github.com/baileymcintosh/<name>)"
         required: true
         type: string
       feedback:
-        description: "Feedback from preliminary run (optional)"
+        description: "Feedback from prelim run to incorporate (optional)"
         required: false
         type: string
-      model_tier:
-        description: "sonnet = cheaper | opus = best quality"
-        required: false
-        default: "sonnet"
-        type: choice
-        options: ["sonnet", "opus"]
 
 env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -30,13 +20,12 @@ env:
   FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
   EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  QUAL_BUILDER_MODEL: "gpt-4o"
-  QUANT_BUILDER_MODEL: "claude-sonnet-4-6"
-  REPORTER_MODEL: ${{ github.event.inputs.model_tier == 'opus' && 'claude-opus-4-6' || 'claude-sonnet-4-6' }}
+  AGENTORG_PROJECTS_ROOT: /tmp/projects
+  AGENTORG_CREATE_GITHUB_REPO: "false"
 
 jobs:
   deep:
-    name: "Deep: ${{ github.event.inputs.project_name }} (${{ github.event.inputs.model_tier }})"
+    name: "Deep: ${{ github.event.inputs.project_name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -51,52 +40,76 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync
 
-      - name: Install pandoc + LaTeX
+      - name: Install pandoc + LaTeX (for PDF export)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends pandoc texlive-xetex texlive-fonts-recommended fonts-dejavu
 
       - name: Clone project repo
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PROJECT_NAME: ${{ github.event.inputs.project_name }}
         run: |
-          git clone "https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/baileymcintosh/${{ github.event.inputs.project_name }}.git" /tmp/project
-          cd /tmp/project
+          mkdir -p /tmp/projects
+          git clone "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${PROJECT_NAME}.git" /tmp/projects/${PROJECT_NAME}
+          cd /tmp/projects/${PROJECT_NAME}
           git config user.name "AgentOrg Bot"
           git config user.email "agentorg-bot@users.noreply.github.com"
-          mkdir -p reports notebooks data
+          git remote set-url origin "https://x-access-token:${PAT_TOKEN}@github.com/baileymcintosh/${PROJECT_NAME}.git"
+          mkdir -p reports data notebooks
 
-      - name: Write feedback
+      - name: Write feedback file (if provided)
         if: ${{ github.event.inputs.feedback != '' }}
-        run: echo "${{ github.event.inputs.feedback }}" > /tmp/project/FEEDBACK.md
-
-      - name: Run deep agents (parallel where possible)
         env:
-          REPORTS_DIR: /tmp/project/reports
+          PROJECT_NAME: ${{ github.event.inputs.project_name }}
+          FEEDBACK: ${{ github.event.inputs.feedback }}
+        run: echo "$FEEDBACK" > /tmp/projects/${PROJECT_NAME}/FEEDBACK.md
+
+      - name: Bootstrap session state
+        env:
+          PROJECT_NAME: ${{ github.event.inputs.project_name }}
         run: |
-          TEAM="${{ github.event.inputs.team }}"
+          python3 - <<'PYEOF'
+          import json, datetime, os
+          from pathlib import Path
+          project_name = os.environ["PROJECT_NAME"]
+          project_dir = Path(f"/tmp/projects/{project_name}")
+          # Read brief from the cloned project repo
+          brief_path = project_dir / "BRIEF.md"
+          brief = brief_path.read_text().strip() if brief_path.exists() else ""
+          session = {
+              "name": project_name,
+              "brief": brief,
+              "project_dir": str(project_dir),
+              "github_repo": f"baileymcintosh/{project_name}",
+              "github_url": f"https://github.com/baileymcintosh/{project_name}",
+              "phase": "prelim",
+              "team": ["qual_builder", "quant_builder"],
+              "completed_phases": ["prelim"],
+              "last_run": datetime.datetime.now().isoformat(),
+              "last_outputs": [],
+              "pending_feedback": "",
+              "notes": "",
+              "publication_approval_required": False,
+              "publication_approval_status": "",
+              "publication_approval_run_id": "",
+              "publication_approval_path": "",
+              "publication_approval_updated_at": "",
+          }
+          Path("SESSION.json").write_text(json.dumps(session, indent=2))
+          print(f"Session bootstrapped: {project_name} (brief: {brief[:80]}...)")
+          PYEOF
 
-          # Run qual + quant in parallel, everything else sequential after
-          PIDS=()
-          for role in qual_builder quant_builder researcher data_analyst coder; do
-            if echo "$TEAM" | grep -q "$role"; then
-              echo "=== $role (parallel) ==="
-              uv run agentorg run "$role" &
-              PIDS+=($!)
-            fi
-          done
-          for pid in "${PIDS[@]}"; do wait "$pid" || true; done
+      - name: Run deep pipeline
+        # Full canonical path: collaborative qual+quant session → critic checkpoint →
+        # verifier → reporter → qa_editor → publication approval
+        env:
+          PROJECT_NAME: ${{ github.event.inputs.project_name }}
+          FEEDBACK: ${{ github.event.inputs.feedback }}
+        run: uv run agentorg iterate "$FEEDBACK"
 
-          for role in verifier reporter; do
-            if echo "$TEAM" | grep -q "$role"; then
-              echo "=== $role ==="
-              uv run agentorg run "$role" || echo "$role error"
-            fi
-          done
-
-      - name: Push outputs to project repo
-        run: |
-          cd /tmp/project
-          git add .
-          git diff --staged --quiet || git commit -m "deep: research outputs (${{ github.event.inputs.model_tier }})"
-          git pull --rebase origin main
-          git push
-          echo "Results: https://github.com/baileymcintosh/${{ github.event.inputs.project_name }}"
+      - name: Summary
+        if: always()
+        env:
+          PROJECT_NAME: ${{ github.event.inputs.project_name }}
+        run: echo "Results at https://github.com/baileymcintosh/${PROJECT_NAME}"
