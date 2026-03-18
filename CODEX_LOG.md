@@ -590,3 +590,40 @@ the QA editor and reporter-revision steps in try/except in runner.py so failures
 - Watch for the search-cap loop issue (can waste 3-5 minutes in the reporter)
 - Consider creating agent_docs/ system prompts before the next deep run
 
+---
+
+**[OVERNIGHT SESSION CONTINUED — 2026-03-18] — New project reliability runs + 2 more bugs fixed**
+
+Session resumed after context compaction. Triggered `fed-policy-2026` (run 23234895918)
+and `ai-labor-markets-2026` (run 23234897127) to confirm reliability on new projects.
+Both failed with `BadRequestError: 400 — Your credit balance is too low`.
+
+### Bug 8: Reporter crashing with 400 when Anthropic credits are exhausted
+**Root cause**: The prelim reporter used `claude-sonnet-4-6` (Anthropic) for ALL calls —
+including the Slack brief generation at `reporter.py:353`. The first Claude call (full summary
+synthesis) consumed the last Anthropic credits. The second call (brief generation) returned
+HTTP 400 "credit balance too low". Since neither call was in a try/except, the entire reporter
+crashed and no report was written — despite the full summary having been generated successfully.
+
+**Underlying design flaw**: `PRELIM_MODEL_OVERRIDES` in `runner.py` overrode `QUAL_BUILDER_MODEL`
+and `VERIFIER_MODEL` to Groq for prelim runs, but NOT `REPORTER_MODEL`. So the reporter always
+called Anthropic regardless of `FAST_MODE`, draining expensive credits on every prelim run.
+
+**Fixes applied**:
+1. `runner.py`: Added `"REPORTER_MODEL": config.PRELIM_MODEL` to `PRELIM_MODEL_OVERRIDES`.
+   Added `REPORTER_MODEL` to the save/restore block in `_project_runtime()` and applied the
+   override in the prelim branch. Now `ReporterAgent` picks up Groq in prelim mode.
+2. `reporter.py`: Added context truncation for FAST_MODE — context truncated to 12k chars,
+   evidence digest to 6k chars, matching the pattern used in `qa_editor.py` to stay within
+   Groq's ~32k input token limit.
+3. `reporter.py`: Wrapped the brief generation call in try/except (non-fatal). If the brief
+   call fails, falls back to `summary[:500]` so the report is still written and published.
+**Commits**: 523f114 (brief non-fatal), c94c156 (route reporter through Groq in prelim)
+
+### Re-runs triggered
+After fixes were committed and pushed:
+- `fed-policy-2026` re-triggered as run 23235434654
+- `ai-labor-markets-2026` re-triggered as run 23235437909
+
+Both should now route the reporter through Groq in prelim/FAST_MODE and stay within budget.
+
