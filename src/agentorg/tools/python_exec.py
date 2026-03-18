@@ -42,6 +42,25 @@ _PREAMBLE = textwrap.dedent("""\
     except ImportError:
         pass
 
+    # Chart style defaults — clean, publication-ready
+    plt.rcParams.update({
+        'figure.figsize': (14, 6),
+        'figure.dpi': 150,
+        'axes.titlesize': 13,
+        'axes.titleweight': 'bold',
+        'axes.labelsize': 11,
+        'axes.labelweight': 'bold',
+        'xtick.labelsize': 9,
+        'ytick.labelsize': 9,
+        'xtick.rotation': 30,
+        'legend.fontsize': 9,
+        'legend.framealpha': 0.85,
+        'lines.linewidth': 1.8,
+        'axes.spines.top': False,
+        'axes.spines.right': False,
+        'figure.constrained_layout.use': True,
+    })
+
     try:
         import yfinance as yf
     except ImportError:

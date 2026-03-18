@@ -52,13 +52,23 @@ class QualBuilderAgent:
 
     def __init__(self) -> None:
         import openai
-        self.client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
         self.model = config.QUAL_BUILDER_MODEL
+        if self._is_groq_model():
+            self.client = openai.OpenAI(
+                api_key=config.GROQ_API_KEY,
+                base_url="https://api.groq.com/openai/v1",
+            )
+        else:
+            self.client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
         self.reports_dir = config.REPORTS_DIR
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self.system_prompt = self._load_system_prompt()
         self.use_search = bool(config.TAVILY_API_KEY)
         self._all_findings: list[str] = []
+
+    def _is_groq_model(self) -> bool:
+        groq_models = ["llama", "mixtral", "gemma", "whisper", "moonshotai"]
+        return any(m in self.model.lower() for m in groq_models)
 
     def _load_system_prompt(self) -> str:
         prompt_path = config.AGENT_DOCS_DIR / "qual_builder.md"

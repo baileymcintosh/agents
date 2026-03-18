@@ -168,10 +168,13 @@ class QuantBuilderAgent:
             "1. Fetch live data with yfinance and/or FRED. Use real tickers: "
             "BZ=F (Brent crude), CL=F (WTI), GC=F (Gold), ^GSPC (S&P 500), ^VIX, "
             "TLT (20yr Treasuries). For FRED: 'DCOILBRENTEU', 'CPIAUCSL', 'DGS10'.\n"
-            "2. Generate professional charts with:\n"
-            "   - Clear title and labelled axes\n"
-            "   - Annotated vertical lines for key events (use axvline + text)\n"
+            "2. Generate professional publication-quality charts with:\n"
+            "   - Concise title (max 10 words, title case)\n"
+            "   - Labelled axes with units (e.g. 'Price (USD/bbl)', 'Index Value')\n"
+            "   - Annotated vertical lines for key events: use ax.axvline() + ax.text() with fontsize=8, rotation=90, va='bottom'\n"
+            "   - Keep annotation labels short (max 4 words) — avoid overlapping text\n"
             "   - Date range covering the conflict period plus 3-month pre-war baseline\n"
+            "   - Add a text box (ax.text) in the top-left corner with the single most important statistic\n"
             "3. Run historical comparisons: overlay 1990 Gulf War, 2003 Iraq, 2021 Suez blockage "
             "   on the same chart where relevant.\n"
             "4. Print key statistics to stdout (% change, peak, correlations).\n"
@@ -186,10 +189,50 @@ class QuantBuilderAgent:
         self._all_findings.append(findings)
         self._all_charts.extend(charts)
 
+        # Write charts manifest so reporter can embed + explain every chart
+        self._write_charts_manifest(charts, findings)
+
         # Extract and post questions for qual
         self._extract_and_post_messages(findings, messenger)
 
         return findings, charts
+
+    def _write_charts_manifest(self, charts: list[str], findings: str) -> None:
+        """Write a JSON manifest mapping chart filenames to descriptions extracted from findings."""
+        import json, re
+        manifest_path = self.reports_dir / "charts_manifest.json"
+
+        # Load existing manifest if present
+        existing: list[dict] = []
+        if manifest_path.exists():
+            try:
+                existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception:
+                existing = []
+
+        # Extract chart descriptions from findings text
+        # Look for patterns like "Chart N:" or "Figure N:" followed by description
+        chart_descs: list[str] = []
+        for match in re.finditer(
+            r"(?:chart|figure|plot)\s*\d*\s*[:\-–]\s*([^\n]{10,150})",
+            findings, re.IGNORECASE
+        ):
+            chart_descs.append(match.group(1).strip())
+
+        for i, chart_path in enumerate(charts):
+            fname = Path(chart_path).name
+            # Skip if already in manifest
+            if any(e["filename"] == fname for e in existing):
+                continue
+            desc = chart_descs[i] if i < len(chart_descs) else f"Quantitative chart {i + 1}"
+            existing.append({
+                "filename": fname,
+                "title": desc[:80],
+                "description": desc,
+            })
+
+        manifest_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        logger.info(f"[quant] Charts manifest → {len(existing)} charts recorded")
 
     def _extract_and_post_messages(self, text: str, messenger: AgentMessenger) -> None:
         lines = text.split("\n")
