@@ -1,14 +1,19 @@
-"""Verifier agent — reviews builder outputs and writes a QA sign-off report."""
+"""Verifier agent — validates structured claims, sources, and quantitative artifacts."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:  # pragma: no cover - minimal test environment fallback
+    import logging
 
-from agentorg.agents.base import BaseAgent
+    logger = logging.getLogger(__name__)
+
 from agentorg import config
+from agentorg.agents.base import BaseAgent
+from agentorg.evidence import EvidenceStore, tier_rank
 
 
 class VerifierAgent(BaseAgent):
@@ -18,46 +23,100 @@ class VerifierAgent(BaseAgent):
         super().__init__()
         if not config.FAST_MODE:
             self.model = config.VERIFIER_MODEL
+        self.store = EvidenceStore(config.REPORTS_DIR)
 
-    def _load_latest_build(self) -> str:
-        builds = sorted(
-            config.REPORTS_DIR.glob("*_builder_*.md"),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True,
-        )
-        if not builds:
-            return "No builder report found. Please run the builder first."
-        latest: Path = builds[0]
-        logger.info(f"[verifier] Reviewing: {latest.name}")
-        return latest.read_text(encoding="utf-8")
+    def _evaluate_claims(self) -> tuple[str, list[dict[str, str]], dict[str, tuple[str, str]]]:
+        sources = {source.id: source for source in self.store.sources()}
+        claims = self.store.claims()
+
+        findings: list[dict[str, str]] = []
+        updates: dict[str, tuple[str, str]] = {}
+        hard_failures = 0
+        soft_failures = 0
+
+        if not claims:
+            return "FAIL", [{"severity": "high", "claim": "No structured claims recorded.", "note": "Builders did not emit any evidence payloads."}], {}
+
+        for claim in claims:
+            linked_sources = [sources[source_id] for source_id in claim.source_ids if source_id in sources]
+            corroborating = [source for source in linked_sources if tier_rank(source.tier) <= 3]
+            issues: list[str] = []
+
+            if claim.materiality == "core" and len(corroborating) < 2:
+                issues.append("Core claim lacks two independent tier 1-3 sources.")
+
+            if not linked_sources and not claim.artifact_paths:
+                issues.append("Claim has no linked sources or data artifacts.")
+
+            if claim.agent_role == "quant_builder":
+                has_dataset = any(source.source_type == "dataset" for source in linked_sources)
+                if not has_dataset and not claim.artifact_paths:
+                    issues.append("Quant claim lacks dataset provenance or generated charts.")
+
+            if claim.confidence < 0.5 and claim.materiality == "core":
+                issues.append("Core claim confidence is below 0.5.")
+
+            if issues:
+                severity = "high" if claim.materiality == "core" else "medium"
+                findings.append(
+                    {
+                        "severity": severity,
+                        "claim": claim.statement,
+                        "note": " ".join(issues),
+                    }
+                )
+                updates[claim.id] = ("needs_revision", " ".join(issues))
+                if severity == "high":
+                    hard_failures += 1
+                else:
+                    soft_failures += 1
+            else:
+                updates[claim.id] = ("verified", "Claim has sufficient provenance.")
+
+        if hard_failures:
+            verdict = "FAIL"
+        elif soft_failures:
+            verdict = "NEEDS REVISION"
+        else:
+            verdict = "PASS"
+        return verdict, findings, updates
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
-        logger.info("[verifier] Starting verification cycle.")
-        self.post_slack_progress("🔎", "starting", "Reviewing research output for accuracy, depth, and quality...")
+        logger.info("[verifier] Starting evidence verification cycle.")
+        verdict, findings, updates = self._evaluate_claims()
 
-        build_output = self._load_latest_build()
+        summary_lines = [
+            "# Verification Report",
+            "",
+            f"**Verdict:** {verdict}",
+            f"**Claims reviewed:** {len(self.store.claims())}",
+            f"**Sources reviewed:** {len(self.store.sources())}",
+            f"**Open agenda items:** {self.store.unresolved_count()}",
+            "",
+        ]
 
-        prompt = (
-            "You are the verifier agent. Critically review the research output below. "
-            "Issue a verdict (PASS / NEEDS REVISION / FAIL), a confidence score (0–100), "
-            "and specific numbered findings on what is strong and what needs work.\n\n"
-            f"## Research Output\n\n{build_output}"
-        )
-
-        if dry_run:
-            report_content = "_Dry-run mode — no Claude call made._"
+        if findings:
+            summary_lines.append("## Findings")
+            for idx, finding in enumerate(findings, start=1):
+                summary_lines.append(
+                    f"{idx}. [{finding['severity'].upper()}] {finding['claim']} — {finding['note']}"
+                )
         else:
-            report_content = self.call_claude(prompt)
+            summary_lines.append("## Findings\nAll recorded claims satisfied the current provenance checks.")
 
+        report_content = "\n".join(summary_lines)
         report_path = self.write_report("Verification Report", report_content)
 
         if not dry_run:
-            brief = self.generate_slack_brief(report_content)
-        else:
-            brief = "Dry-run complete."
-        self.post_slack_progress("✅", "done", brief)
+            self.store.annotate_claim_statuses(updates)
+            self.store.write_verification(verdict, report_content, findings)
 
-        return {"status": "ok", "report": str(report_path)}
+        return {
+            "status": "ok",
+            "report": str(report_path),
+            "verdict": verdict,
+            "findings": findings,
+        }
 
 
 def main(dry_run: bool = False) -> None:

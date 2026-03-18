@@ -1,239 +1,190 @@
-"""
-Runner — executes agent teams locally with streaming output.
-
-Two modes:
-  prelim  — fast, cheap models (Groq/DeepSeek), 3 goals, target <10 min
-  deep    — full models, all goals, no time cap (or explicit budget)
-
-Outputs land in the project directory. Runner writes a RUN_LOG.md
-so we always know what happened.
-"""
+"""Canonical project runner: planner output -> collaborative session -> verifier -> reporter."""
 
 from __future__ import annotations
 
+import contextlib
 import datetime
-import importlib
-import os
-import subprocess
-import sys
-import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:  # pragma: no cover - minimal test environment fallback
+    import logging
+
+    logger = logging.getLogger(__name__)
 
 from agentorg import config, session_state
+from agentorg.agents.reporter import ReporterAgent
+from agentorg.agents.session import run_collaborative_session
+from agentorg.agents.verifier import VerifierAgent
 
 
-# Model overrides for prelim runs — cheap and fast
-PRELIM_MODEL_OVERRIDES: dict[str, str] = {
-    "researcher": config.PRELIM_MODEL,        # Groq Llama
-    "qual_builder": config.PRELIM_MODEL,      # Groq Llama
-    "data_analyst": "deepseek-chat",          # DeepSeek V3 — good at code/data
-    "quant_builder": "deepseek-chat",
-    "coder": "deepseek-chat",
-    "verifier": config.PRELIM_MODEL,
-    # planner + debugger always use their configured (expensive) model
-    # reporter uses Sonnet even in prelim for quality synthesis
-    "reporter": "claude-sonnet-4-6",
+PRELIM_MODEL_OVERRIDES: dict[str, Any] = {
+    "QUAL_BUILDER_MODEL": config.PRELIM_MODEL,
+    "VERIFIER_MODEL": config.PRELIM_MODEL,
+    "FAST_MODE": True,
 }
 
 
 def run_prelim(session: session_state.ProjectSession) -> dict[str, Any]:
-    """
-    Run the team in preliminary mode: cheap models, limited goals, <10 min target.
-    Returns dict with output paths and summary.
-    """
-    project_dir = Path(session.project_dir)
-    reports_dir = project_dir / "reports"
-    reports_dir.mkdir(exist_ok=True)
-
-    # Override env vars for cheap models
-    env = {**os.environ}
-    for role, model in PRELIM_MODEL_OVERRIDES.items():
-        env_key = f"{role.upper()}_MODEL"
-        env[env_key] = model
-    env["REPORTS_DIR"] = str(reports_dir)
-    env["FAST_MODE"] = "false"
-    env["TIME_BUDGET"] = "8m"  # hard cap for prelim
-
-    # Build the prelim prompt from session goals
-    goals_text = "\n".join(f"- {g}" for g in _get_prelim_goals(session))
-    brief_path = project_dir / "BRIEF.md"
-    brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else session.brief
-
-    prelim_brief = f"""PRELIMINARY RUN — validate data sources and produce quick first-pass outputs.
-
-Project: {session.name}
-Brief: {brief}
-
-Goals for this run (complete as many as possible in <10 min):
-{goals_text}
-
-Keep outputs concise. Focus on proving you can access the right data and
-produce sensible preliminary findings. This is a validation run, not the final product.
-"""
-
-    # Write prelim brief to project dir so agents can read it
-    (project_dir / "PRELIM_BRIEF.md").write_text(prelim_brief, encoding="utf-8")
-
-    logger.info(f"[runner] Starting prelim run for '{session.name}'")
-    start = datetime.datetime.now()
-    outputs: list[str] = []
-
-    for role in session.team:
-        if role == "reporter":
-            continue  # run reporter last
-        output = _run_agent(role, env, project_dir, mode="prelim")
-        if output:
-            outputs.append(output)
-
-    # Run reporter to synthesise
-    output = _run_agent("reporter", env, project_dir, mode="prelim")
-    if output:
-        outputs.append(output)
-
-    elapsed = (datetime.datetime.now() - start).seconds
-    logger.info(f"[runner] Prelim run complete in {elapsed}s")
-
-    # Push to GitHub
-    _push(project_dir, f"prelim: initial outputs ({elapsed}s)")
-
-    return {
-        "outputs": outputs,
-        "elapsed_seconds": elapsed,
-        "reports_dir": str(reports_dir),
-    }
+    return _run_project_cycle(session, mode="prelim")
 
 
 def run_deep(session: session_state.ProjectSession, feedback: str = "") -> dict[str, Any]:
-    """
-    Run the team in deep mode: full models, all goals.
-    """
+    return _run_project_cycle(session, mode="deep", feedback=feedback)
+
+
+def _run_project_cycle(
+    session: session_state.ProjectSession,
+    mode: str,
+    feedback: str = "",
+) -> dict[str, Any]:
     project_dir = Path(session.project_dir)
     reports_dir = project_dir / "reports"
-    reports_dir.mkdir(exist_ok=True)
-
-    env = {**os.environ}
-    env["REPORTS_DIR"] = str(reports_dir)
-    env["FAST_MODE"] = "false"
+    reports_dir.mkdir(parents=True, exist_ok=True)
 
     brief_path = project_dir / "BRIEF.md"
+    plan_path = project_dir / "PLAN.md"
     brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else session.brief
+    plan_text = plan_path.read_text(encoding="utf-8") if plan_path.exists() else ""
+    goals = _extract_goals(plan_text, mode)
+    time_budget = "8m" if mode == "prelim" else (config.TIME_BUDGET or "60m")
+    max_cycles = 2 if mode == "prelim" else max(config.SESSION_COLLAB_TURNS, 6)
 
-    deep_prompt = f"""DEEP RESEARCH RUN
+    research_plan = _compose_research_plan(
+        project_name=session.name,
+        brief=brief,
+        plan_text=plan_text,
+        goals=goals,
+        mode=mode,
+        feedback=feedback,
+    )
 
-Project: {session.name}
-Brief: {brief}
-"""
-    if feedback:
-        deep_prompt += f"\nFeedback from preliminary run:\n{feedback}\n"
+    with _project_runtime(project_dir=project_dir, reports_dir=reports_dir, mode=mode, time_budget=time_budget):
+        start = datetime.datetime.now()
+        logger.info(f"[runner] Starting canonical {mode} cycle for '{session.name}'")
+        session_result = run_collaborative_session(
+            research_plan=research_plan,
+            agenda_seed=goals or ["Produce a defensible synthesis with claims, sources, and charts."],
+            time_budget=time_budget,
+            max_cycles=max_cycles,
+            dry_run=False,
+        )
 
-    (project_dir / "DEEP_BRIEF.md").write_text(deep_prompt, encoding="utf-8")
+        verifier_result = VerifierAgent().run(dry_run=False)
+        outputs = [
+            session_result.get("qual_report"),
+            session_result.get("quant_report"),
+            session_result.get("dialogue_report"),
+            verifier_result.get("report"),
+        ]
 
-    logger.info(f"[runner] Starting deep run for '{session.name}'")
-    start = datetime.datetime.now()
-    outputs: list[str] = []
-
-    # Run parallel agents (qual + quant) if both in team
-    parallel_roles = [r for r in session.team if r in ("qual_builder", "quant_builder", "researcher", "data_analyst")]
-    sequential_roles = [r for r in session.team if r not in parallel_roles + ["reporter"]]
-
-    if len(parallel_roles) >= 2:
-        outputs.extend(_run_parallel(parallel_roles, env, project_dir))
-    else:
-        for role in parallel_roles:
-            out = _run_agent(role, env, project_dir, mode="deep")
-            if out:
-                outputs.append(out)
-
-    for role in sequential_roles:
-        out = _run_agent(role, env, project_dir, mode="deep")
-        if out:
-            outputs.append(out)
-
-    out = _run_agent("reporter", env, project_dir, mode="deep")
-    if out:
-        outputs.append(out)
-
-    elapsed = (datetime.datetime.now() - start).seconds
-    _push(project_dir, f"deep: research outputs ({elapsed // 60}m)")
-
-    return {"outputs": outputs, "elapsed_seconds": elapsed}
-
-
-def _run_agent(role: str, env: dict, project_dir: Path, mode: str) -> str | None:
-    """Run a single agent as a subprocess, streaming output. Returns report path or None."""
-    cmd = [sys.executable, "-m", "agentorg.cli", "run", role]
-    log_file = project_dir / "reports" / f"run_{role}_{mode}.log"
-
-    logger.info(f"[runner] → {role} ({mode})")
-    try:
-        with open(log_file, "w", encoding="utf-8") as f:
-            result = subprocess.run(
-                cmd,
-                env={**env, "PYTHONPATH": str(Path(__file__).parent.parent)},
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                timeout=600,  # 10 min hard cap per agent
-                cwd=str(project_dir),
+        reporter_result: dict[str, Any] | None = None
+        if verifier_result.get("verdict") == "PASS":
+            reporter_result = ReporterAgent().run(dry_run=False)
+            outputs.extend(
+                [
+                    reporter_result.get("report"),
+                    reporter_result.get("notebook"),
+                    reporter_result.get("pdf"),
+                ]
             )
-        if result.returncode != 0:
-            logger.warning(f"[runner] {role} exited with code {result.returncode}")
-        return str(log_file)
-    except subprocess.TimeoutExpired:
-        logger.warning(f"[runner] {role} timed out after 10 min")
-        return None
-    except Exception as e:
-        logger.warning(f"[runner] {role} failed: {e}")
-        return None
+        else:
+            logger.warning(
+                f"[runner] Reporter skipped because verifier verdict was {verifier_result.get('verdict')}"
+            )
+        _push(project_dir, f"{mode}: collaborative research cycle")
+        elapsed = int((datetime.datetime.now() - start).total_seconds())
+
+    return {
+        "outputs": [output for output in outputs if output],
+        "session": session_result,
+        "verification": verifier_result,
+        "reporter": reporter_result,
+        "mode": mode,
+        "elapsed_seconds": elapsed,
+    }
 
 
-def _run_parallel(roles: list[str], env: dict, project_dir: Path) -> list[str]:
-    """Run multiple agents in parallel threads. Returns list of output paths."""
-    results: dict[str, str | None] = {}
+def _extract_goals(plan_text: str, mode: str) -> list[str]:
+    section_name = "Preliminary Run Goals" if mode == "prelim" else "Deep Research Goals"
+    goals: list[str] = []
+    in_section = False
+    for line in plan_text.splitlines():
+        if section_name in line:
+            in_section = True
+            continue
+        if in_section and line.startswith("## "):
+            break
+        if in_section and line.strip().startswith("- "):
+            goals.append(line.strip()[2:])
+    return goals
 
-    def _target(role: str) -> None:
-        results[role] = _run_agent(role, env, project_dir, mode="deep")
 
-    threads = [threading.Thread(target=_target, args=(r,)) for r in roles]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+def _compose_research_plan(
+    project_name: str,
+    brief: str,
+    plan_text: str,
+    goals: list[str],
+    mode: str,
+    feedback: str,
+) -> str:
+    goals_block = "\n".join(f"- {goal}" for goal in goals) or "- Produce the highest-value missing research."
+    plan_parts = [
+        f"# {mode.title()} Research Cycle",
+        "",
+        f"## Project\n{project_name}",
+        "",
+        "## Brief",
+        brief,
+        "",
+        "## Agenda Goals",
+        goals_block,
+    ]
+    if plan_text:
+        plan_parts.extend(["", "## Team Planner Plan", plan_text])
+    if feedback:
+        plan_parts.extend(["", "## Feedback", feedback])
+    return "\n".join(plan_parts)
 
-    return [v for v in results.values() if v]
+
+@contextlib.contextmanager
+def _project_runtime(
+    project_dir: Path,
+    reports_dir: Path,
+    mode: str,
+    time_budget: str,
+) -> Iterator[None]:
+    previous = {
+        "REPORTS_DIR": config.REPORTS_DIR,
+        "FAST_MODE": config.FAST_MODE,
+        "TIME_BUDGET": config.TIME_BUDGET,
+        "QUAL_BUILDER_MODEL": config.QUAL_BUILDER_MODEL,
+        "VERIFIER_MODEL": config.VERIFIER_MODEL,
+    }
+    config.set_reports_dir(reports_dir)
+    config.TIME_BUDGET = time_budget
+    if mode == "prelim":
+        config.QUAL_BUILDER_MODEL = PRELIM_MODEL_OVERRIDES["QUAL_BUILDER_MODEL"]
+        config.VERIFIER_MODEL = PRELIM_MODEL_OVERRIDES["VERIFIER_MODEL"]
+        config.FAST_MODE = PRELIM_MODEL_OVERRIDES["FAST_MODE"]
+    else:
+        config.FAST_MODE = False
+    try:
+        yield
+    finally:
+        config.set_reports_dir(previous["REPORTS_DIR"])
+        config.FAST_MODE = previous["FAST_MODE"]
+        config.TIME_BUDGET = previous["TIME_BUDGET"]
+        config.QUAL_BUILDER_MODEL = previous["QUAL_BUILDER_MODEL"]
+        config.VERIFIER_MODEL = previous["VERIFIER_MODEL"]
 
 
 def _push(project_dir: Path, message: str) -> None:
     try:
         from agentorg.project_manager import push
+
         push(project_dir, message)
     except Exception as e:
         logger.warning(f"[runner] Push failed (non-fatal): {e}")
-
-
-def _get_prelim_goals(session: session_state.ProjectSession) -> list[str]:
-    """Extract prelim goals from plan file or fall back to generic."""
-    plan_path = Path(session.project_dir) / "PLAN.md"
-    if plan_path.exists():
-        text = plan_path.read_text(encoding="utf-8")
-        # Extract bullet points under "Preliminary Run Goals"
-        in_section = False
-        goals = []
-        for line in text.splitlines():
-            if "Preliminary Run Goals" in line:
-                in_section = True
-                continue
-            if in_section:
-                if line.startswith("## "):
-                    break
-                if line.strip().startswith("- "):
-                    goals.append(line.strip()[2:])
-        if goals:
-            return goals
-    return [
-        "Identify and validate key data sources",
-        "Produce initial summary of the topic",
-        "Generate at least one data chart or table",
-    ]

@@ -10,6 +10,8 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.markdown import Markdown
 
+from agentorg import config
+
 app = typer.Typer(
     name="agentorg",
     help="Autonomous multi-agent research organization.",
@@ -238,11 +240,30 @@ def session(
 ) -> None:
     """Run a collaborative research session (qual + quant in parallel)."""
     from agentorg.agents.session import run_collaborative_session
+    from pathlib import Path
 
     console.print("[bold green]Starting collaborative session[/bold green]")
+    plan_path = config.REPORTS_DIR.parent / "PLAN.md"
+    brief_path = config.REPORTS_DIR.parent / "BRIEF.md"
+    research_plan = ""
+    agenda_seed: list[str] = []
+
+    if plan_path.exists():
+        research_plan = plan_path.read_text(encoding="utf-8")
+        agenda_seed = [line.strip()[2:] for line in research_plan.splitlines() if line.strip().startswith("- ")]
+    elif brief_path.exists():
+        research_plan = brief_path.read_text(encoding="utf-8")
+        agenda_seed = ["Produce a sourced research memo.", "Resolve the highest-value open questions."]
+    else:
+        project_path = Path("PROJECT.md")
+        research_plan = project_path.read_text(encoding="utf-8") if project_path.exists() else "Research the active project."
+        agenda_seed = ["Produce a sourced research memo.", "Resolve the highest-value open questions."]
+
     result = run_collaborative_session(
+        research_plan=research_plan,
+        agenda_seed=agenda_seed,
         time_budget=time_budget,
-        turns_per_agent=turns or None,
+        max_cycles=turns or None,
         dry_run=dry_run,
     )
     console.print(f"[green]Session complete[/green] — {result.get('messages', 0)} messages, "

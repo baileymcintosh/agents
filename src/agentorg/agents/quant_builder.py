@@ -15,13 +15,23 @@ import time
 from pathlib import Path
 from typing import Any
 
-import anthropic
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:  # pragma: no cover - minimal test environment fallback
+    import logging
+
+    logger = logging.getLogger(__name__)
 
 from agentorg import config
+from agentorg.evidence import extract_json_block
 from agentorg.messaging import AgentMessenger
 from agentorg.tools.python_exec import PYTHON_EXEC_TOOL_DEFINITION, PythonExecutor
 from agentorg.tools.search import SEARCH_TOOL_DEFINITION, web_search, format_search_results
+
+try:
+    import anthropic
+except ImportError:  # pragma: no cover - exercised in minimal test envs
+    anthropic = None  # type: ignore[assignment]
 
 
 class QuantBuilderAgent:
@@ -30,7 +40,7 @@ class QuantBuilderAgent:
     role = "quant_builder"
 
     def __init__(self) -> None:
-        self.client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        self.client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY) if anthropic else None
         self.model = config.QUANT_BUILDER_MODEL
         self.reports_dir = config.REPORTS_DIR
         self.reports_dir.mkdir(parents=True, exist_ok=True)
@@ -67,6 +77,8 @@ class QuantBuilderAgent:
         all_charts: list[str] = []
 
         logger.info(f"[quant] → Claude ({self.model}) with Python exec + web search")
+        if self.client is None or anthropic is None:
+            raise RuntimeError("anthropic package is required for quant_builder.")
 
         while True:
             kwargs: dict[str, Any] = {
@@ -81,7 +93,9 @@ class QuantBuilderAgent:
                 try:
                     response = self.client.messages.create(**kwargs)
                     break
-                except anthropic.RateLimitError as e:
+                except Exception as e:
+                    if anthropic is None or not isinstance(e, anthropic.RateLimitError):
+                        raise
                     wait = 60 * (2 ** attempt)
                     logger.warning(f"[quant] Rate limited — waiting {wait}s")
                     time.sleep(wait)
@@ -137,9 +151,10 @@ class QuantBuilderAgent:
         turn: int,
         research_plan: str,
         messenger: AgentMessenger,
+        agenda_items: list[dict[str, str]],
         clock_context: str = "",
-    ) -> tuple[str, list[str]]:
-        """Execute one research turn. Returns (findings_markdown, chart_paths)."""
+    ) -> dict[str, Any]:
+        """Execute one research turn and return prose, charts, and structured evidence."""
 
         inbound = messenger.drain("quant")
         partner_context = messenger.format_for_prompt(inbound) if inbound else ""
@@ -182,20 +197,55 @@ class QuantBuilderAgent:
             "6. End your response with a `## Questions for Qual` section for anything you see "
             "   in the data that needs a narrative explanation.\n"
             "   Format: 'I see [metric] moved [X%] on [date]. What happened?'\n"
+            "7. After your prose, append a machine-readable ```evidence_json block.\n"
+        )
+
+        if agenda_items:
+            prompt_parts.append(
+                "## Assigned Agenda Items\n" +
+                "\n".join(f"- {item['id']}: {item['question']}" for item in agenda_items)
+            )
+
+        prompt_parts.append(
+            "\n## evidence_json schema\n"
+            "Return valid JSON with this exact top-level shape after your prose:\n"
+            "```evidence_json\n"
+            "{\n"
+            '  "sources": [\n'
+            '    {"id": "S1", "title": "...", "url": "...", "publisher": "...", '
+            '"published_at": "YYYY-MM-DD or empty", "tier": "dataset|tier1_primary|tier2_journalism|tier3_analysis|tier4_expert|tier5_unverified", '
+            '"summary": "one sentence", "source_type": "dataset|web"}\n'
+            "  ],\n"
+            '  "claims": [\n'
+            '    {"statement": "...", "confidence": 0.0, "materiality": "core|supporting", '
+            '"kind": "market_impact|data_point|comparison|risk", "source_ids": ["S1"]}\n'
+            "  ],\n"
+            '  "addressed_agenda_ids": ["A_xxxx"],\n'
+            '  "new_agenda_items": [\n'
+            '    {"question": "...", "owner": "qual|quant|shared", "priority": "high|medium|low", "note": "..."}\n'
+            "  ]\n"
+            "}\n"
+            "```\n"
+            "Rules:\n"
+            "- Include dataset sources for every quantitative claim you rely on.\n"
+            "- Every chart-supported or numeric statement in prose must appear in claims.\n"
+            "- Use `source_type: dataset` for yfinance/FRED/EIA style inputs.\n"
+            "- `addressed_agenda_ids` must only include agenda items you materially advanced.\n"
         )
 
         prompt = "\n\n".join(prompt_parts)
         findings, charts = self.call_claude(prompt)
-        self._all_findings.append(findings)
+        clean_findings, payload = extract_json_block(findings)
+        self._all_findings.append(clean_findings)
         self._all_charts.extend(charts)
 
         # Write charts manifest so reporter can embed + explain every chart
-        self._write_charts_manifest(charts, findings)
+        self._write_charts_manifest(charts, clean_findings)
 
         # Extract and post questions for qual
-        self._extract_and_post_messages(findings, messenger)
+        self._extract_and_post_messages(clean_findings, messenger)
 
-        return findings, charts
+        return {"content": clean_findings, "payload": payload, "charts": charts}
 
     def _write_charts_manifest(self, charts: list[str], findings: str) -> None:
         """Write a JSON manifest mapping chart filenames to descriptions extracted from findings."""
@@ -310,8 +360,9 @@ class QuantBuilderAgent:
             brief_path = config.ROOT_DIR / "BRIEF.md"
         brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else "Analyse key market data and produce annotated charts."
         messenger = AgentMessenger(run_id="standalone")
-        findings, _ = self.run_turn(turn=1, research_plan=brief, messenger=messenger)
-        return {"status": "ok", "report": findings}
+        result = self.run_turn(turn=1, research_plan=brief, messenger=messenger, agenda_items=[])
+        report_path = self.write_report(turn=1, content=result["content"], charts=result["charts"])
+        return {"status": "ok", "report": str(report_path)}
 
     def run_with_recovery(self, dry_run: bool = False) -> dict:
         """Compatibility shim — calls run()."""

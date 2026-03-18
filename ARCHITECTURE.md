@@ -1,66 +1,79 @@
 # Architecture
 
-## Workflow
+## Canonical Workflow
 
 ```mermaid
 flowchart TD
-    U([Bailey]) -->|project brief| CC[Claude Code\nOrchestrator]
-    CC -->|proposes team| U
-    U -->|approves| CC
-    CC -->|triggers| P[prelim.yml\nGitHub Actions]
+    U([User / Bailey]) -->|brief| TP[team_planner]
+    TP -->|writes PLAN.md| P[(project directory)]
+    P --> S[collaborative session]
 
-    subgraph Prelim Run - cheap models, <10 min
-        P --> QB1[qual_builder\nGroq Llama 3.3 70B\nweb search]
-        P --> QT1[quant_builder\nClaude Sonnet\nPython + data]
-        QB1 & QT1 --> R1[reporter\nClaude Sonnet]
+    subgraph Collaborative Session
+        QL[qual_builder]
+        QT[quant_builder]
+        AG[agenda.json]
+        EV[sources.json + claims.json]
+        QL <--> QT
+        QL --> EV
+        QT --> EV
+        QL --> AG
+        QT --> AG
     end
 
-    R1 -->|pushes outputs| PR[(project repo\nbaileymcintosh/project-name)]
-    CC -->|notifies + link| U
-    U -->|feedback| CC
-    CC -->|triggers| D[deep.yml\nGitHub Actions]
-
-    subgraph Deep Run - full models
-        D --> QB2[qual_builder\nGPT-4o]
-        D --> QT2[quant_builder\nClaude Sonnet]
-        QB2 & QT2 --> V[verifier\nClaude Sonnet]
-        V --> R2[reporter\nClaude Sonnet]
-    end
-
-    R2 -->|pushes outputs| PR
-    CC -->|notifies + link| U
+    S --> V[verifier]
+    V -->|PASS| R[reporter]
+    V -->|FAIL / NEEDS REVISION| P
+    R --> O[(reports / notebook / pdf)]
 ```
 
-## Agent roles
+## Execution Model
 
-| Agent | Model (prelim) | Model (deep) | Purpose |
+- `team_planner` creates the initial agenda and project structure.
+- `qual_builder` and `quant_builder` run as the active research pair.
+- Both builders emit prose plus a machine-readable `evidence_json` payload.
+- The session persists sources, claims, and agenda items under `reports/_state/`.
+- `verifier` checks claim provenance and quantitative artifact coverage.
+- `reporter` only synthesizes after verifier verdict `PASS`.
+
+## Agent Roles
+
+| Agent | Prelim behavior | Deep behavior | Purpose |
 |---|---|---|---|
-| team_planner | Claude Opus | Claude Opus | Reads brief, proposes custom team |
-| qual_builder | Groq Llama 3.3 70B | GPT-4o | Web search, news, policy, narrative |
-| quant_builder | Claude Sonnet | Claude Sonnet | Python execution, live data, charts |
-| verifier | Groq Llama | Claude Sonnet | QA and fact-checking |
-| reporter | Claude Sonnet | Claude Sonnet | Synthesis → report + notebook |
-| debugger | Claude Opus | Claude Opus | Failure recovery |
+| `team_planner` | Opus | Opus | Team design, project framing, agenda seeds |
+| `qual_builder` | cheaper / fast search | deeper current-intelligence pass | News, policy, speeches, source gathering |
+| `quant_builder` | focused data validation | deeper analysis + charts | Data, charts, statistics, quantitative claims |
+| `verifier` | fast provenance screen | full claim-level gate | QA over claims, sources, and artifacts |
+| `reporter` | concise synthesis | full memo + notebook/PDF | Final reporting |
+| `debugger` | recovery | recovery | Failure diagnosis and retry guidance |
 
-## Data sources
+## Persisted State
 
-| Source | Access | Used by |
-|---|---|---|
-| Tavily | API | qual_builder — web search |
-| yfinance | pip | quant_builder — equity/commodity prices |
-| FRED | API | quant_builder — macro data |
-| EIA | API | quant_builder — energy data |
-| Kalshi | API | quant_builder — prediction markets |
+Project reports now include structured state:
 
-## Project repo structure
-
-Each project gets its own GitHub repo:
+```text
+reports/
+  _state/
+    agenda.json
+    claims.json
+    sources.json
+    verification.json
+  charts_manifest.json
+  *_qual_builder_*.md
+  *_quant_builder_*.md
+  *_verifier_*.md
+  *_reporter_*.md
 ```
-baileymcintosh/<project-name>/
-  BRIEF.md          original task brief
-  PLAN.md           proposed team + research goals
-  FEEDBACK.md       feedback between runs
-  reports/          agent outputs (Markdown + .ipynb)
-  data/             raw data files
-  notebooks/        interactive notebooks
-```
+
+## Verification Rules
+
+The current verifier enforces:
+
+- core claims need at least two corroborating tier 1-3 sources
+- claims must have source provenance or quantitative artifacts
+- quant claims must carry dataset provenance and/or generated charts
+- final reporting is blocked when verification fails
+
+## Notes
+
+- The legacy single `builder` path still exists in the codebase for compatibility, but it is no longer the intended product architecture.
+- `charts_manifest.json` remains the reporter-facing chart handoff and should stay decoupled from the broader evidence store.

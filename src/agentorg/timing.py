@@ -21,12 +21,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:  # pragma: no cover - minimal test environment fallback
+    import logging
+
+    logger = logging.getLogger(__name__)
 
 from agentorg import config
-
-
-_META_FILE = config.REPORTS_DIR / ".run_meta.json"
 
 # Depth tiers — maps (min_remaining_minutes, max_searches, max_tokens_hint, guidance)
 _TIERS = [
@@ -80,7 +82,7 @@ class RunClock:
         config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         start = time.time()
         meta: dict[str, Any] = {"start_epoch": start, "budget_minutes": budget_minutes}
-        _META_FILE.write_text(json.dumps(meta), encoding="utf-8")
+        cls._meta_file().write_text(json.dumps(meta), encoding="utf-8")
         logger.info(f"[clock] Run started. Budget: {budget_minutes:.0f} min")
         return cls(start_epoch=start, budget_minutes=budget_minutes)
 
@@ -90,10 +92,11 @@ class RunClock:
         Load the clock from the meta file written by the first agent.
         Returns None if no budget was set (unlimited run).
         """
-        if not _META_FILE.exists():
+        meta_file = cls._meta_file()
+        if not meta_file.exists():
             return None
         try:
-            meta = json.loads(_META_FILE.read_text(encoding="utf-8"))
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
             budget = float(meta.get("budget_minutes", 0))
             if budget <= 0:
                 return None
@@ -101,6 +104,10 @@ class RunClock:
         except Exception as e:
             logger.warning(f"[clock] Could not read run meta: {e}")
             return None
+
+    @staticmethod
+    def _meta_file() -> Path:
+        return config.REPORTS_DIR / ".run_meta.json"
 
     # ── Time calculations ──────────────────────────────────────────────────────
 

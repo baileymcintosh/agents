@@ -16,9 +16,15 @@ import time
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:  # pragma: no cover - minimal test environment fallback
+    import logging
+
+    logger = logging.getLogger(__name__)
 
 from agentorg import config
+from agentorg.evidence import extract_json_block
 from agentorg.messaging import AgentMessage, AgentMessenger
 from agentorg.tools.search import web_search, format_search_results
 
@@ -157,9 +163,10 @@ class QualBuilderAgent:
         research_plan: str,
         messenger: AgentMessenger,
         completed_sections: list[str],
+        agenda_items: list[dict[str, str]],
         clock_context: str = "",
-    ) -> str:
-        """Execute one research turn. Returns findings as markdown string."""
+    ) -> dict[str, Any]:
+        """Execute one research turn and return prose plus a structured evidence payload."""
 
         # Drain messages from quant partner
         inbound = messenger.drain("qual")
@@ -194,17 +201,52 @@ class QualBuilderAgent:
             "4. Write your findings in structured markdown with clear headings.\n"
             "5. End your response with a `## Questions for Quant` section if you have data questions.\n"
             "   Format: 'Check [asset/metric] around [date/period] — I'm seeing [event] that should show up.'\n"
+            "6. After your prose, append a machine-readable ```evidence_json block.\n"
+        )
+
+        if agenda_items:
+            prompt_parts.append(
+                "## Assigned Agenda Items\n" +
+                "\n".join(f"- {item['id']}: {item['question']}" for item in agenda_items)
+            )
+
+        prompt_parts.append(
+            "\n## evidence_json schema\n"
+            "Return valid JSON with this exact top-level shape after your prose:\n"
+            "```evidence_json\n"
+            "{\n"
+            '  "sources": [\n'
+            '    {"id": "S1", "title": "...", "url": "...", "publisher": "...", '
+            '"published_at": "YYYY-MM-DD or empty", "tier": "tier1_primary|tier2_journalism|tier3_analysis|tier4_expert|tier5_unverified", '
+            '"summary": "one sentence", "source_type": "web"}\n'
+            "  ],\n"
+            '  "claims": [\n'
+            '    {"statement": "...", "confidence": 0.0, "materiality": "core|supporting", '
+            '"kind": "finding|context|risk|timeline", "source_ids": ["S1", "S2"]}\n'
+            "  ],\n"
+            '  "addressed_agenda_ids": ["A_xxxx"],\n'
+            '  "new_agenda_items": [\n'
+            '    {"question": "...", "owner": "quant|qual|shared", "priority": "high|medium|low", "note": "..."}\n'
+            "  ]\n"
+            "}\n"
+            "```\n"
+            "Rules:\n"
+            "- Every material claim in prose must appear in claims.\n"
+            "- Use the source reliability framework when assigning `tier`.\n"
+            "- `addressed_agenda_ids` must only include agenda items you materially advanced.\n"
+            "- Add new agenda items when you uncover unresolved questions, contradictions, or follow-ups.\n"
         )
 
         prompt = "\n\n".join(prompt_parts)
 
         findings = self.call_openai(prompt, max_searches=8)
-        self._all_findings.append(findings)
+        clean_findings, payload = extract_json_block(findings)
+        self._all_findings.append(clean_findings)
 
         # Extract and post any questions/findings for the quant builder
-        self._extract_and_post_messages(findings, messenger)
+        self._extract_and_post_messages(clean_findings, messenger)
 
-        return findings
+        return {"content": clean_findings, "payload": payload}
 
     def _extract_and_post_messages(self, text: str, messenger: AgentMessenger) -> None:
         """Parse the agent's output for cross-agent messages and post them."""
@@ -269,8 +311,15 @@ class QualBuilderAgent:
             brief_path = config.ROOT_DIR / "BRIEF.md"
         brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else "Research the assigned topic thoroughly."
         messenger = AgentMessenger(run_id="standalone")
-        report = self.run_turn(turn=1, research_plan=brief, messenger=messenger, completed_sections=[])
-        return {"status": "ok", "report": str(report)}
+        result = self.run_turn(
+            turn=1,
+            research_plan=brief,
+            messenger=messenger,
+            completed_sections=[],
+            agenda_items=[],
+        )
+        report_path = self.write_report(turn=1, content=result["content"])
+        return {"status": "ok", "report": str(report_path)}
 
     def run_with_recovery(self, dry_run: bool = False) -> dict:
         """Compatibility shim — calls run()."""

@@ -74,3 +74,12 @@ TIME_BUDGET: str = os.getenv("TIME_BUDGET", "")  # empty = unlimited
 
 # Slack bot user ID — used by listener to filter out the bot's own messages
 SLACK_BOT_USER_ID: str = os.getenv("SLACK_BOT_USER_ID", "")
+
+
+def set_reports_dir(path: str | Path) -> Path:
+    """Update the active reports directory for the current process."""
+    global REPORTS_DIR
+    REPORTS_DIR = Path(path)
+    os.environ["REPORTS_DIR"] = str(REPORTS_DIR)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    return REPORTS_DIR

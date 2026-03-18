@@ -1,52 +1,44 @@
 """
-ProjectManager — creates local project directories and GitHub repos.
-
-Each project gets:
-  ~/OneDrive - PennO365/Projects/GITHUB/<project-name>/
-    BRIEF.md          — original task brief
-    PLAN.md           — team plan (written before prelim run)
-    FEEDBACK.md       — Bailey's feedback between runs (edited by hand or by me)
-    reports/          — all agent outputs land here
-    data/             — raw data files
-    notebooks/        — Jupyter notebooks
-
-And a public GitHub repo: baileymcintosh/<project-name>
+Project manager for per-project working directories and optional GitHub repos.
 """
 
 from __future__ import annotations
 
-import subprocess
+import os
 import shutil
+import subprocess
 from pathlib import Path
 
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:  # pragma: no cover - minimal test environment fallback
+    import logging
+
+    logger = logging.getLogger(__name__)
 
 
-GITHUB_USER = "baileymcintosh"
-GH_CLI = "/c/Program Files/GitHub CLI/gh.exe"
-PROJECTS_ROOT = Path.home() / "OneDrive - PennO365" / "Projects" / "GITHUB" / "agent projects"
+GITHUB_USER = os.getenv("GITHUB_USER", "baileymcintosh")
+GH_CLI = os.getenv("GH_CLI", shutil.which("gh") or "gh")
+PROJECTS_ROOT = Path(
+    os.getenv(
+        "AGENTORG_PROJECTS_ROOT",
+        str(Path.home() / "OneDrive - PennO365" / "Projects" / "GITHUB" / "agent projects"),
+    )
+)
 
 
 def create_project(project_name: str, brief: str, plan_content: str = "") -> dict:
-    """
-    Create local directory structure + GitHub repo.
-    Returns dict with project_dir and github_url.
-    """
+    """Create local directory structure and, if enabled, a GitHub repo."""
     project_dir = PROJECTS_ROOT / project_name
     project_dir.mkdir(parents=True, exist_ok=True)
 
-    # Subdirectories
     for subdir in ["reports", "data", "notebooks"]:
         (project_dir / subdir).mkdir(exist_ok=True)
 
-    # Write brief
     (project_dir / "BRIEF.md").write_text(f"# Brief\n\n{brief}\n", encoding="utf-8")
-
-    # Write plan if provided
     if plan_content:
         (project_dir / "PLAN.md").write_text(plan_content, encoding="utf-8")
 
-    # Write empty feedback file
     feedback_path = project_dir / "FEEDBACK.md"
     if not feedback_path.exists():
         feedback_path.write_text(
@@ -54,49 +46,71 @@ def create_project(project_name: str, brief: str, plan_content: str = "") -> dic
             encoding="utf-8",
         )
 
-    # Init git
     _run(["git", "init"], cwd=project_dir)
     _run(["git", "add", "."], cwd=project_dir)
-    _run(["git", "commit", "-m", "init: project setup"], cwd=project_dir)
+    try:
+        _run(["git", "commit", "-m", "init: project setup"], cwd=project_dir)
+    except subprocess.CalledProcessError:
+        logger.info("[project_manager] Initial commit skipped (nothing to commit)")
 
-    # Create GitHub repo
     github_url = _create_github_repo(project_name, brief, project_dir)
-
     logger.info(f"[project_manager] Project ready: {project_dir}")
     return {"project_dir": str(project_dir), "github_url": github_url}
 
 
 def push(project_dir: Path, message: str = "chore: update") -> None:
-    """Stage all changes and push to GitHub."""
+    """Stage all changes and push to GitHub when a remote exists."""
     _run(["git", "add", "-A"], cwd=project_dir)
-    result = subprocess.run(
-        ["git", "diff", "--staged", "--quiet"],
-        cwd=project_dir, capture_output=True
-    )
+    result = subprocess.run(["git", "diff", "--staged", "--quiet"], cwd=project_dir, capture_output=True)
     if result.returncode != 0:
         _run(["git", "commit", "-m", message], cwd=project_dir)
-    _run(["git", "pull", "--rebase", "origin", "main"], cwd=project_dir)
-    _run(["git", "push"], cwd=project_dir)
-    logger.info(f"[project_manager] Pushed → {project_dir.name}")
+
+    remotes = subprocess.run(["git", "remote"], cwd=project_dir, capture_output=True, text=True, check=False)
+    if "origin" in remotes.stdout.split():
+        _run(["git", "pull", "--rebase", "origin", "main"], cwd=project_dir)
+        _run(["git", "push"], cwd=project_dir)
+        logger.info(f"[project_manager] Pushed -> {project_dir.name}")
+    else:
+        logger.info(f"[project_manager] No git remote configured for {project_dir.name}; push skipped")
 
 
 def _create_github_repo(project_name: str, description: str, project_dir: Path) -> str:
-    """Create public GitHub repo and push. Returns the repo URL."""
+    """Create and push a public GitHub repo unless disabled."""
+    if os.getenv("AGENTORG_CREATE_GITHUB_REPO", "true").lower() != "true":
+        logger.info("[project_manager] GitHub repo creation disabled by env")
+        return ""
+    if not shutil.which(str(GH_CLI)) and GH_CLI == "gh":
+        logger.warning("[project_manager] gh CLI not found on PATH; skipping repo creation")
+        return ""
+
     short_desc = description[:100].replace('"', "'").split("\n")[0]
     try:
         result = subprocess.run(
-            [GH_CLI, "repo", "create", f"{GITHUB_USER}/{project_name}",
-             "--public", "--description", short_desc, "--source", str(project_dir),
-             "--remote", "origin", "--push"],
-            capture_output=True, text=True, timeout=60
+            [
+                GH_CLI,
+                "repo",
+                "create",
+                f"{GITHUB_USER}/{project_name}",
+                "--public",
+                "--description",
+                short_desc,
+                "--source",
+                str(project_dir),
+                "--remote",
+                "origin",
+                "--push",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
         )
         if result.returncode == 0:
             url = f"https://github.com/{GITHUB_USER}/{project_name}"
             logger.info(f"[project_manager] GitHub repo created: {url}")
             return url
-        else:
-            logger.warning(f"[project_manager] gh repo create failed: {result.stderr}")
-            return ""
+        logger.warning(f"[project_manager] gh repo create failed: {result.stderr}")
+        return ""
     except Exception as e:
         logger.warning(f"[project_manager] Could not create GitHub repo: {e}")
         return ""

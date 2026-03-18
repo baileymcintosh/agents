@@ -6,7 +6,12 @@ import os
 from typing import Any
 
 import httpx
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:  # pragma: no cover - minimal test environment fallback
+    import logging
+
+    logger = logging.getLogger(__name__)
 
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")

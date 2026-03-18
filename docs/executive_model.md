@@ -1,75 +1,78 @@
 # Executive Model — How to Oversee This System
 
-This document is written for **Bailey**, the non-technical executive overseeing AgentOrg.
+This document is for the non-technical owner of AgentOrg.
 
-## What This System Does
+## What The System Does
 
-AgentOrg is a team of AI researchers that works for you continuously — planning, building, checking its own work, and reporting results. You don't need to direct individual tasks. The system identifies what's worth working on and does it.
+AgentOrg behaves like a small research team:
 
-Think of it like managing a research department where:
-- You see a daily or weekly summary in Slack
-- You can ask questions or redirect priorities at any time
-- The team keeps a public record of everything it does
+- a planner defines the scope
+- a qualitative researcher gathers current intelligence and narrative context
+- a quantitative researcher runs data analysis and produces charts
+- a verifier checks whether claims are properly supported
+- a reporter assembles the final memo
 
-## Your Touchpoints
+The system is designed so you mainly provide the brief and then review the final output.
 
-### 1. Slack (primary)
-Every night, the Reporter agent posts an executive summary to your Slack channel. It contains:
-- What was accomplished
-- Key findings
-- Any risks or blockers
-- What the team plans to do next
+## What You See
 
-**You don't need to do anything** unless the report asks for a decision.
+The primary outputs are:
 
-### 2. GitHub (audit trail)
-Every report is committed to the repository as a Markdown file. You can browse them at any time. The file names include the date and agent role so you can find specific reports easily.
+- a final written report
+- an optional notebook/PDF
+- supporting charts and datasets
+- an audit trail of claims, sources, and verification results
 
-### 3. Direct commands (optional)
-If you want to trigger something specific, ask your engineering contact to run:
-```
-agentorg run planner
-agentorg run builder
-agentorg run reporter
-```
-Or trigger any workflow manually from the GitHub Actions tab.
+## What Matters To You
 
-## How to Redirect Priorities
+### PASS vs FAIL
 
-If you want the agents to focus on something specific:
-1. Edit `TASKS.md` in the repository root — add your priority to the top of the list
-2. The Planner will pick it up in the next cycle
+The key control point is the verifier:
 
-You can also describe the goal in plain English and ask your engineering contact to add it.
+- `PASS`: the final report is allowed to publish
+- `NEEDS REVISION` or `FAIL`: final synthesis is blocked until evidence quality improves
 
-## What "Done" Looks Like
+This means the system now has a real quality gate rather than only a narrative review step.
 
-Each research cycle ends with an Executive Summary report that includes:
-- A one-line status
-- Bullet-point accomplishments
-- A quality verdict from the Verifier
-- Recommended next steps
+### Audit Trail
 
-If the Verifier flags problems, they'll appear clearly in the report. Nothing is hidden.
+Every project keeps structured state in `reports/_state/`:
 
-## Escalation
+- `sources.json`
+- `claims.json`
+- `agenda.json`
+- `verification.json`
 
-If a report contains the words **"FAIL"** or **"Decisions Needed from Leadership"**, that means the system needs your input before it can proceed. The report will tell you exactly what's needed.
+You do not need to read these files routinely, but they are the evidence trail behind the final report.
+
+## How To Redirect Priorities
+
+You can steer the system by:
+
+1. changing the project brief
+2. adding feedback before a deeper run
+3. asking the engineering contact to rerun the project with a different time budget
+
+The internal agenda is then updated by the agents as research proceeds.
 
 ## What You Can Ignore
 
-- Individual planner, builder, and verifier reports — these are working documents for the engineering team
-- GitHub commit history (unless you're curious)
-- Docker and Python configuration
+- old `builder` terminology in some legacy files
+- most intermediate agent reports unless a verifier failure requires review
+- Python, Docker, or GitHub CLI details
 
-## Glossary
+## When To Escalate
 
-| Term | What It Means |
-|---|---|
-| Planner | The AI that decides what to work on |
-| Builder | The AI that does the work |
-| Verifier | The AI that checks the work |
-| Reporter | The AI that summarizes everything for you |
-| GitHub Actions | The scheduling system that runs the agents automatically |
-| Report | A Markdown (text) file with structured findings |
-| Executive Summary | The one-page report posted to your Slack every night |
+Escalate to engineering when:
+
+- verification repeatedly fails on a strategically important project
+- a source or claim in the final memo appears materially wrong
+- the system stops producing charts or artifacts for quantitative sections
+
+## Short Version
+
+Think of the system as:
+
+`Brief -> collaborative research -> verification gate -> final memo`
+
+If the verification gate fails, trust that failure signal and treat the run as incomplete.

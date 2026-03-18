@@ -7,10 +7,16 @@ import json
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:  # pragma: no cover - minimal test environment fallback
+    import logging
+
+    logger = logging.getLogger(__name__)
 
 from agentorg.agents.base import BaseAgent
 from agentorg import config
+from agentorg.evidence import EvidenceStore
 
 
 class ReporterAgent(BaseAgent):
@@ -22,6 +28,7 @@ class ReporterAgent(BaseAgent):
             self.model = config.REPORTER_MODEL
         self.max_tokens = config.AGENT_MAX_TOKENS
         self.clock = None  # never cap reporter tokens
+        self.store = EvidenceStore(config.REPORTS_DIR)
 
     def _gather_recent_reports(self) -> str:
         sections = []
@@ -140,7 +147,7 @@ class ReporterAgent(BaseAgent):
         try:
             from agentorg.reporting.notebook import build_notebook, save_notebook
             meta = {
-                "project": "Iran–USA–Israel War: Strategic Assessment",
+                "project": self._project_title(),
                 "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "model": self.model,
             }
@@ -154,6 +161,38 @@ class ReporterAgent(BaseAgent):
         except Exception as e:
             logger.warning(f"[reporter] Notebook build failed: {e}")
             return None
+
+    def _project_title(self) -> str:
+        brief_path = config.REPORTS_DIR.parent / "BRIEF.md"
+        if brief_path.exists():
+            lines = [line.strip() for line in brief_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            for line in lines:
+                if not line.startswith("#"):
+                    return line[:120]
+        return config.REPORTS_DIR.parent.name.replace("-", " ").title()
+
+    def _evidence_digest(self) -> str:
+        verification = self.store.latest_verification()
+        sources = self.store.sources()
+        claims = self.store.claims()
+        lines = [
+            "## Structured Evidence Digest",
+            f"- Claims recorded: {len(claims)}",
+            f"- Sources recorded: {len(sources)}",
+        ]
+        if verification:
+            lines.append(f"- Verification verdict: {verification.get('verdict', 'UNKNOWN')}")
+        top_sources = sources[:8]
+        if top_sources:
+            lines.append("\n### Source Register")
+            for source in top_sources:
+                lines.append(f"- [{source.tier}] {source.title} — {source.url or source.publisher}")
+        top_claims = claims[:10]
+        if top_claims:
+            lines.append("\n### Verified Claim Inventory")
+            for claim in top_claims:
+                lines.append(f"- ({claim.status}) {claim.statement}")
+        return "\n".join(lines)
 
     def _export_pdf(self, report_path: Path) -> Path | None:
         import subprocess
@@ -209,6 +248,7 @@ class ReporterAgent(BaseAgent):
         self.post_slack_progress("📝", "starting", "Synthesizing all research into final report...")
 
         context = self._gather_recent_reports()
+        evidence_digest = self._evidence_digest()
 
         summary_prompt = (
             "You are the reporter — the senior editor who synthesises work from a two-person research team:\n"
@@ -232,8 +272,9 @@ class ReporterAgent(BaseAgent):
             "- Cite named sources from the qual research (publications, officials, think tanks)\n"
             "- Where a chart was generated, reference it: 'As shown in the oil price chart above...'\n"
             "- Include the cross-agent dialogue insights: moments where quant spotted something and qual explained it\n"
+            "- Prefer claims marked `verified` when the evidence digest distinguishes them\n"
             "- This is the final deliverable for senior leadership making real financial decisions\n\n"
-            f"{context}"
+            f"{context}\n\n{evidence_digest}"
         )
 
         if dry_run:
@@ -310,6 +351,9 @@ class ReporterAgent(BaseAgent):
                     if desc:
                         data_section += f"{desc}\n\n"
             md_with_charts = md_with_charts + data_section
+
+        if evidence_digest:
+            md_with_charts = md_with_charts + "\n\n---\n\n" + evidence_digest
 
         # Collect ALL chart paths for notebook embedding
         all_pngs = sorted(config.REPORTS_DIR.glob("chart_*.png"), key=lambda p: p.stat().st_mtime)

@@ -67,9 +67,8 @@ ignore_missing_imports = true
 mypy_path = "src"
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=agentorg --cov-report=term-missing --cov-report=html"
+addopts = "-q --basetemp=.pytest_tmp"
 
 [tool.coverage.run]
 source = ["agentorg"]

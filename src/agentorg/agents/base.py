@@ -9,12 +9,21 @@ from typing import Any
 
 import time
 
-import anthropic
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:  # pragma: no cover - minimal test environment fallback
+    import logging
+
+    logger = logging.getLogger(__name__)
 
 from agentorg import config
 from agentorg.timing import RunClock
 from agentorg.tools.search import SEARCH_TOOL_DEFINITION, web_search, format_search_results
+
+try:
+    import anthropic
+except ImportError:  # pragma: no cover - exercised in minimal test envs
+    anthropic = None  # type: ignore[assignment]
 
 
 class BaseAgent(ABC):
@@ -30,7 +39,7 @@ class BaseAgent(ABC):
     role: str = "base"
 
     def __init__(self) -> None:
-        self.client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        self.client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY) if anthropic else None
         # Fast mode overrides per-role model with Sonnet and caps tokens
         if config.FAST_MODE:
             self.model = config.REPORTER_MODEL
@@ -107,6 +116,8 @@ class BaseAgent(ABC):
             return self._call_openai_compat(content, config.GROQ_BASE_URL, config.GROQ_API_KEY, "Groq")
         if self._is_deepseek_model():
             return self._call_openai_compat(content, config.DEEPSEEK_BASE_URL, config.DEEPSEEK_API_KEY, "DeepSeek")
+        if self.client is None or anthropic is None:
+            raise RuntimeError("anthropic package is required for Claude-backed agents.")
         messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
 
         # Inject time context into the message if a budget is active
@@ -155,7 +166,9 @@ class BaseAgent(ABC):
                 try:
                     response = self.client.messages.create(**kwargs)
                     break
-                except anthropic.RateLimitError as e:
+                except Exception as e:
+                    if anthropic is None or not isinstance(e, anthropic.RateLimitError):
+                        raise
                     wait = 60 * (2 ** attempt)  # 60s, 120s, 240s, 480s, 960s
                     logger.warning(f"[{self.role}] Rate limited — waiting {wait}s before retry {attempt + 1}/5")
                     time.sleep(wait)
@@ -244,6 +257,8 @@ class BaseAgent(ABC):
             f"Report:\n{full_report[:3000]}"
         )
         try:
+            if self.client is None:
+                return "Work completed — see full report for details."
             response = self.client.messages.create(
                 model=config.REPORTER_MODEL,
                 max_tokens=150,
