@@ -25,11 +25,13 @@ Use these exact headings in order:
 
 ## Rules
 
+- **Inline citations are mandatory.** After every factual claim, statistic, or quoted position, add a parenthetical source: (Reuters, Mar 2026) or (BLS, Feb 2026) or (yfinance data). No claim may appear without a source.
 - Cite specific data points from the quant research (exact prices, % changes, dates).
 - Cite named sources from the qual research (publications, officials, think tanks).
-- In the narrative sections, reference charts by name: "As shown in the oil price chart below..."
+- In the narrative sections, reference charts by name: "As shown in the tech sector performance chart below..."
 - In `## Data & Charts`, write a detailed analytical paragraph for EVERY chart in the chart catalogue.
 - For each chart: write a `### [Chart Title]` subheading, a `[CHART: filename]` placeholder on its own line, then a 2-4 paragraph analysis covering: what the data shows (specific numbers, trends, turning points), why it matters to the thesis, how it connects to qualitative findings, and any anomalies worth flagging.
+- Each chart's analysis must be UNIQUE — do not reuse the same sentence structure or themes across charts.
 - Include cross-agent dialogue insights: moments where quant spotted something and qual explained it.
 - Prefer claims marked `verified` when the evidence digest distinguishes them.
 - This is the final deliverable for senior leadership making real financial decisions.

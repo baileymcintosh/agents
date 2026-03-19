@@ -92,6 +92,11 @@ _PREAMBLE = textwrap.dedent("""\
 
     _chart_counter = [0]
     _saved_charts = []
+    _chart_source = ['']  # set via set_source() before plt.show()
+
+    def set_source(text):
+        """Call before plt.show() to annotate the chart with its data source."""
+        _chart_source[0] = text
 
     _orig_show = plt.show
     def _auto_save_and_show(*args, **kwargs):
@@ -104,6 +109,13 @@ _PREAMBLE = textwrap.dedent("""\
             slug = _re.sub(r'[^a-z0-9]+', '_', raw_title.lower()).strip('_')[:40]
         else:
             slug = f'chart_{_chart_counter[0]:02d}'
+        # Add source annotation at bottom-right of figure
+        source_text = _chart_source[0]
+        if source_text:
+            plt.gcf().text(0.99, 0.01, source_text, ha='right', va='bottom',
+                           fontsize=7, style='italic', color='#666666',
+                           transform=plt.gcf().transFigure)
+        _chart_source[0] = ''  # reset for next chart
         fname = os.path.join(REPORTS_DIR, f'{_chart_counter[0]:02d}_{slug}.png')
         plt.savefig(fname, dpi=150, bbox_inches='tight', facecolor='white')
         _saved_charts.append(fname)

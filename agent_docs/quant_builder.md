@@ -27,7 +27,7 @@ Every chart must have:
 2. Generate professional publication-quality charts (see standards above).
 3. Run historical comparisons: overlay 1990 Gulf War, 2003 Iraq, 2021 Suez blockage on the same chart where relevant.
 4. Print key statistics to stdout (% change, peak, correlations).
-5. Call `plt.show()` after each figure to save it.
+5. Before every `plt.show()`, call `set_source("Source: <dataset name>")` to annotate the chart with its data source (e.g. `set_source("Source: Yahoo Finance (yfinance)")` or `set_source("Source: FRED / Federal Reserve")`). This is mandatory — every chart must cite its data.
 6. End your response with a `## Questions for Qual` section for anything in the data that needs narrative explanation. Format: "I see [metric] moved [X%] on [date]. What happened?"
 7. After your prose, append a machine-readable ```evidence_json block.
 

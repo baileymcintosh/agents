@@ -66,89 +66,54 @@ class ReporterAgent(BaseAgent):
 
         return "\n\n---\n\n".join(sections) if sections else "No reports found."
 
-    def _extract_chart_data(self, summary: str, context: str) -> dict[str, Any]:
-        """
-        Ask Claude directly for structured chart data based on the full research.
-        Much more reliable than hoping the builder embedded correct JSON.
-        """
+    def _extract_timeline_events(self, summary: str, context: str) -> list[dict[str, str]]:
+        """Extract key events chronologically from the research for a markdown table."""
         prompt = (
-            "Based on the research below, output ONLY a JSON object (no explanation, no markdown, "
-            "just raw JSON) with the following structure. Use real numbers from the research.\n\n"
-            "{\n"
-            '  "scenario_title": "string",\n'
-            '  "scenarios": [{"name": "string", "probability": number_0_to_100, "color": "#hexcode"}, ...],\n'
-            '  "market_title": "string",\n'
-            '  "market_impacts": [{"name": "string", "low": number, "high": number, "direction": "up"|"down"}, ...],\n'
-            '  "timeline_title": "string",\n'
-            '  "timeline": [{"date": "string", "label": "string", "severity": "high"|"medium"|"low"}, ...]\n'
-            "}\n\n"
+            "Based on the research below, output ONLY a JSON array (no explanation, no markdown fences) "
+            "of key events in chronological order. Include as many specific, distinct events as the research supports — "
+            "aim for 15-25 entries for a thorough timeline. Each entry:\n"
+            '{"date": "Mon YYYY or Q1 YYYY", "event": "Concise specific description (max 15 words)", '
+            '"significance": "One sentence on why this matters"}\n\n'
             "Rules:\n"
-            "- scenarios: 4-6 items, probabilities must sum to ~100\n"
-            "- market_impacts: 6-10 assets with realistic % ranges (can be negative)\n"
-            "- timeline: 6-10 key events in chronological order\n"
-            "- colors: use #27ae60 (green/positive), #e74c3c (red/high-risk), "
-            "#f39c12 (yellow/uncertain), #3498db (blue/neutral), #8e44ad (purple/severe)\n\n"
+            "- Only include events that are explicitly mentioned in the research — no invented entries\n"
+            "- dates must be specific (avoid 'Recent' or 'Ongoing')\n"
+            "- events must be factual, named, and specific — not generic ('markets reacted')\n"
+            "- significance must explain the direct relevance to the research topic\n\n"
             f"Research summary:\n{summary[:4000]}\n\nFull context:\n{context[:3000]}"
         )
         try:
-            raw = self.call_claude(prompt)
-            # Strip any accidental markdown fences
-            raw = raw.strip()
+            raw = self.call_claude(prompt).strip()
             if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            return json.loads(raw.strip())
+                raw = raw.split("```")[1].removeprefix("json").strip()
+            events = json.loads(raw)
+            return events if isinstance(events, list) else []
         except Exception as e:
-            logger.warning(f"[reporter] Chart data extraction failed: {e}")
-            return {}
+            logger.warning(f"[reporter] Timeline extraction failed: {e}")
+            return []
+
+    def _build_events_table(self, events: list[dict[str, str]], title: str = "Key Events") -> str:
+        """Render extracted events as a markdown table."""
+        if not events:
+            return ""
+        lines = [
+            f"## {title}",
+            "",
+            "| Date | Event | Significance |",
+            "|---|---|---|",
+        ]
+        for e in events:
+            date = e.get("date", "").replace("|", "/")
+            event = e.get("event", "").replace("|", "-")
+            sig = e.get("significance", "").replace("|", "-")
+            lines.append(f"| {date} | {event} | {sig} |")
+        lines.append("")
+        return "\n".join(lines)
 
     def _generate_charts(self, data: dict[str, Any]) -> dict[str, Path]:
-        from agentorg.reporting.charts import (
-            scenario_probability_chart,
-            market_impact_chart,
-            timeline_chart,
-        )
-        paths: dict[str, Path] = {}
-
-        if "scenarios" in data:
-            try:
-                p = scenario_probability_chart(
-                    data["scenarios"][:10],
-                    config.REPORTS_DIR / "chart_scenarios.png",
-                    title=data.get("scenario_title", "Scenario Probability Distribution"),
-                )
-                if p:
-                    paths["scenarios"] = p
-            except Exception as e:
-                logger.warning(f"[reporter] scenario_probability_chart failed (skipping): {e}")
-
-        if "market_impacts" in data:
-            try:
-                p = market_impact_chart(
-                    data["market_impacts"][:12],
-                    config.REPORTS_DIR / "chart_market_impact.png",
-                    title=data.get("market_title", "Estimated Market Impact by Asset Class"),
-                )
-                if p:
-                    paths["market_impacts"] = p
-            except Exception as e:
-                logger.warning(f"[reporter] market_impact_chart failed (skipping): {e}")
-
-        if "timeline" in data:
-            try:
-                p = timeline_chart(
-                    data["timeline"][:14],
-                    config.REPORTS_DIR / "chart_timeline.png",
-                    title=data.get("timeline_title", "Event Timeline"),
-                )
-                if p:
-                    paths["timeline"] = p
-            except Exception as e:
-                logger.warning(f"[reporter] timeline_chart failed (skipping): {e}")
-
-        logger.info(f"[reporter] Generated {len(paths)} chart(s): {list(paths.keys())}")
-        return paths
+        # Scenario probability and market impact charts removed — they rely on
+        # fabricated numbers and add no analytical value. Only quant-generated
+        # charts (from real data via yfinance/FRED) are now used.
+        return {}
 
     def _build_all_plots_md(self, all_png_paths: list[Path]) -> Path | None:
         """Build a markdown file with every chart embedded as a relative image link."""
@@ -462,6 +427,9 @@ class ReporterAgent(BaseAgent):
             "## Data & Charts\n\n"
             "Rules:\n"
             "- `## TL;DR` may use bullets. Every other section should be mostly full prose paragraphs.\n"
+            "- **Inline citations are mandatory.** After every factual claim, statistic, or quoted position, "
+            "add a parenthetical source: (Reuters, Mar 2026) or (BLS, Feb 2026) or (yfinance data). "
+            "No claim may appear without a source. Data from charts must cite their dataset.\n"
             "- Cite specific data points from the quant research (exact prices, % changes, dates)\n"
             "- Cite named sources from the qual research (publications, officials, think tanks)\n"
             "- Let the plots lead the discussion: reference charts repeatedly in the body and explain what each plot changes about the thesis.\n"
@@ -497,12 +465,15 @@ class ReporterAgent(BaseAgent):
                 logger.warning(f"[reporter] Slack brief generation failed (non-fatal): {e}")
                 brief = summary[:500]
 
-        # Generate reporter summary charts (scenarios, timeline, market impact)
-        chart_paths: dict[str, Path] = {}
+        # Build key events table and inject into report after Situation Overview
+        events_table = ""
         if not dry_run:
-            chart_data = self._extract_chart_data(summary, context)
-            if chart_data:
-                chart_paths = self._generate_charts(chart_data)
+            events = self._extract_timeline_events(summary, context)
+            if events:
+                events_table = self._build_events_table(events)
+                logger.info(f"[reporter] Key events table: {len(events)} entries")
+
+        chart_paths: dict[str, Path] = {}  # reporter summary charts removed (scenario/market were fabricated)
 
         # Build markdown: apply citations, then resolve [CHART: filename] placeholders
         cited_summary = self._apply_inline_citations(summary)
@@ -553,28 +524,19 @@ class ReporterAgent(BaseAgent):
         banner = self._confidence_banner()
         md_with_charts = f"{banner}\n{cited_summary}" if banner else cited_summary
 
-        # Insert reporter summary charts (timeline, scenarios, market_impacts) next to relevant sections
-        if chart_paths:
-            triggers = {
-                "timeline": ["## situation", "## one-line", "## overview"],
-                "scenarios": ["## scenario"],
-                "market_impacts": ["## financial", "## market"],
-            }
-            remaining = dict(chart_paths)
-            lines = cited_summary.split("\n")
-            out = []
-            for line in lines:
-                out.append(line)
-                ll = line.lower()
-                for key, keywords in list(triggers.items()):
-                    if key in remaining and any(ll.startswith(kw) for kw in keywords):
-                        p = chart_paths[key]
-                        out.append(f"\n![{p.stem.replace('_', ' ').title()}](charts/{p.name})\n")
-                        remaining.pop(key)
-                        break
-            for key, p in remaining.items():
-                out.append(f"\n---\n\n## {key.replace('_', ' ').title()}\n\n![{p.stem}](charts/{p.name})\n")
-            md_with_charts = "\n".join(out)
+        # Inject key events table after ## Situation Overview (or ## Executive Summary as fallback)
+        if events_table:
+            for anchor in ("## Situation Overview", "## Core Analysis", "## Executive Summary"):
+                if anchor in md_with_charts:
+                    # Insert the table BEFORE the anchor section so it appears right after the intro
+                    md_with_charts = md_with_charts.replace(anchor, events_table + "\n" + anchor, 1)
+                    break
+            else:
+                # No matching section — append before Data & Charts
+                if "## Data & Charts" in md_with_charts:
+                    md_with_charts = md_with_charts.replace("## Data & Charts", events_table + "\n## Data & Charts", 1)
+                else:
+                    md_with_charts += "\n\n" + events_table
 
         references_section = self._references_section()
         if evidence_digest:
