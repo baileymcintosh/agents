@@ -337,41 +337,86 @@ def _project_runtime(
 
 def _organise_run_outputs(reports_dir: Path, project_dir: Path, reporter_result: dict | None) -> None:
     """
-    Move all PNG charts into a charts/ subfolder and copy the final report
-    to project_dir/report.md (latest run always wins) for easy access.
+    Organise all run outputs into a clean, structured repo layout:
+
+    project_dir/
+    ├── final_report.md        ← polished executive report
+    ├── final_report.ipynb     ← same as notebook
+    ├── all_plots.md           ← every chart as markdown (renders on GitHub)
+    ├── all_plots.ipynb        ← every chart as self-contained notebook
+    ├── charts/                ← all PNG charts (flat, descriptive names)
+    └── agent_outputs/
+        ├── qual/              ← qualitative builder turn reports
+        ├── quant/             ← quantitative builder turn reports
+        ├── verification/      ← verifier report
+        ├── qa/                ← QA editor report
+        ├── charts/            ← same PNGs (source location)
+        └── _state/            ← evidence JSON state
     """
     import shutil
 
-    # Move all PNGs into charts/ subfolder within the run dir
-    charts_dir = reports_dir / "charts"
-    charts_dir.mkdir(exist_ok=True)
+    # ── 1. Move PNGs into agent_outputs/charts/ ──────────────────────────────
+    agent_dir = project_dir / "agent_outputs"
+    ao_charts_dir = reports_dir / "charts"
+    ao_charts_dir.mkdir(exist_ok=True)
     for png in reports_dir.glob("*.png"):
-        dest = charts_dir / png.name
+        dest = ao_charts_dir / png.name
         if not dest.exists():
             png.rename(dest)
-            logger.info(f"[runner] Chart → charts/{png.name}")
+            logger.info(f"[runner] Chart → agent_outputs/charts/{png.name}")
 
+    # ── 2. Copy charts to project root charts/ for easy access ───────────────
     project_charts_dir = project_dir / "charts"
     project_charts_dir.mkdir(exist_ok=True)
-    for png in charts_dir.glob("*.png"):
+    for png in ao_charts_dir.glob("*.png"):
         dest = project_charts_dir / png.name
         if not dest.exists():
             shutil.copy2(png, dest)
 
-    # Copy the executive summary to project root as report.md for easy access
+    # ── 3. Organise agent markdown reports into subfolders ───────────────────
+    subfolder_map = {
+        "qual_builder": agent_dir / "qual",
+        "quant_builder": agent_dir / "quant",
+        "verifier": agent_dir / "verification",
+        "qa_editor": agent_dir / "qa",
+        "reporter": agent_dir / "reporter",
+        "session": agent_dir / "session",
+    }
+    for subfolder in subfolder_map.values():
+        subfolder.mkdir(parents=True, exist_ok=True)
+
+    for md_file in reports_dir.glob("*.md"):
+        stem = md_file.stem
+        moved = False
+        for role, dest_dir in subfolder_map.items():
+            if role in stem:
+                dest = dest_dir / md_file.name
+                if not dest.exists():
+                    shutil.copy2(md_file, dest)
+                moved = True
+                break
+        if not moved:
+            # fallback: leave in reports_dir
+            pass
+
+    # ── 4. Copy final outputs to project root ─────────────────────────────────
     if reporter_result:
         report_src = reporter_result.get("report", "")
         nb_src = reporter_result.get("notebook", "")
         all_plots_src = reporter_result.get("all_plots", "")
+        all_plots_md_src = reporter_result.get("all_plots_md", "")
         if report_src and Path(report_src).exists():
-            shutil.copy2(report_src, project_dir / "report.md")
-            logger.info(f"[runner] Latest report → report.md")
+            shutil.copy2(report_src, project_dir / "final_report.md")
+            logger.info(f"[runner] Report → final_report.md")
         if nb_src and Path(nb_src).exists():
-            shutil.copy2(nb_src, project_dir / "report.ipynb")
-            logger.info(f"[runner] Latest notebook → report.ipynb")
+            shutil.copy2(nb_src, project_dir / "final_report.ipynb")
+            logger.info(f"[runner] Notebook → final_report.ipynb")
         if all_plots_src and Path(all_plots_src).exists():
             shutil.copy2(all_plots_src, project_dir / "all_plots.ipynb")
             logger.info(f"[runner] All-plots notebook → all_plots.ipynb")
+        if all_plots_md_src and Path(all_plots_md_src).exists():
+            shutil.copy2(all_plots_md_src, project_dir / "all_plots.md")
+            logger.info(f"[runner] All-plots markdown → all_plots.md")
 
 
 def _clear_evidence_state(reports_dir: Path) -> None:
