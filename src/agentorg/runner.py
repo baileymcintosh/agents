@@ -405,21 +405,9 @@ def _organise_run_outputs(reports_dir: Path, project_dir: Path, reporter_result:
             # fallback: leave in reports_dir
             pass
 
-    # ── 4. Move reports/ into agent_outputs/ so it doesn't clutter the root ──
-    # reports_dir is project_dir/reports — move its remaining files into
-    # agent_outputs/raw/ then remove the now-empty reports/ tree.
-    ao_raw_dir = agent_dir / "raw"
-    ao_raw_dir.mkdir(parents=True, exist_ok=True)
-    for item in reports_dir.iterdir():
-        dest = ao_raw_dir / item.name
-        if not dest.exists():
-            shutil.move(str(item), str(dest))
-    try:
-        reports_dir.rmdir()  # only succeeds if empty
-    except OSError:
-        pass  # non-empty dirs (e.g. nested state) get left; acceptable
-
-    # ── 5. Copy final outputs to project root ─────────────────────────────────
+    # ── 4. Copy final outputs to project root BEFORE moving reports/ ──────────
+    # Must happen before step 5 — reporter_result paths point into reports_dir,
+    # which gets moved in step 5. After the move those paths no longer exist.
     if reporter_result:
         report_src = reporter_result.get("report", "")
         nb_src = reporter_result.get("notebook", "")
@@ -437,6 +425,18 @@ def _organise_run_outputs(reports_dir: Path, project_dir: Path, reporter_result:
         if all_plots_md_src and Path(all_plots_md_src).exists():
             shutil.copy2(all_plots_md_src, project_dir / "all_plots.md")
             logger.info(f"[runner] All-plots markdown → all_plots.md")
+
+    # ── 5. Move reports/ into agent_outputs/raw/ so it doesn't clutter root ──
+    ao_raw_dir = agent_dir / "raw"
+    ao_raw_dir.mkdir(parents=True, exist_ok=True)
+    for item in reports_dir.iterdir():
+        dest = ao_raw_dir / item.name
+        if not dest.exists():
+            shutil.move(str(item), str(dest))
+    try:
+        reports_dir.rmdir()  # only succeeds if empty
+    except OSError:
+        pass  # non-empty dirs get left; acceptable
 
     # ── 6. Write README.md ────────────────────────────────────────────────────
     project_name = project_dir.name
