@@ -15,11 +15,11 @@ Usage:
 
 Output per article:
     corpus/kkr/2024-01_regime_change_private_equity_abc123/
-        article.md       ← full text with YAML frontmatter
-        img_01.png       ← charts / figures extracted from the article
+        article.md       <- full text (cleaned, boilerplate stripped) + YAML frontmatter
+        img_01.png       <- charts / figures extracted from the article
         img_02.png
         ...
-    corpus/index.json    ← full metadata manifest
+    corpus/index.json    <- full metadata manifest
 """
 
 from __future__ import annotations
@@ -37,17 +37,15 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 # ── Firm registry ─────────────────────────────────────────────────────────────
-# discovery: "sitemap" | "jina_links"  (use sitemap where possible)
-# sitemap_url: direct URL to the sitemap that contains article listings
-# article_pattern: regex matched against article URLs for filtering
-
 FIRMS: dict[str, dict] = {
     "kkr": {
         "name": "KKR",
         "insights_url": "https://www.kkr.com/insights",
         "discovery": "sitemap",
         "sitemap_url": "https://www.kkr.com/sitemap.xml",
+        # Exclude press releases, awards, portfolio company announcements
         "article_pattern": r"kkr\.com/insights/[a-z0-9\-]+$",
+        "skip_pattern": r"(award|press-release|portfolio|hiring|appoint|partner|ceo-letter|deal-close)",
         "type": "private_equity",
     },
     "apollo": {
@@ -55,8 +53,14 @@ FIRMS: dict[str, dict] = {
         "insights_url": "https://www.apollo.com/insights-news/insights",
         "discovery": "sitemap",
         "sitemap_url": "https://www.apollo.com/sitemap.xml",
-        "article_pattern": r"apollo\.com/insights-news/insights/[a-z0-9\-/]+\d{4}/\d{2}/[a-z0-9\-]+$",
+        # Exclude short 'Overheard' news blurbs — target substantive dated research
+        "article_pattern": r"apollo\.com/insights-news/insights/\d{4}/\d{2}/[a-z0-9\-]+$",
+        "skip_pattern": r"overheard-at-apollo",
         "type": "private_equity",
+        # Apollo embeds PDF download links in raw HTML
+        "pdf_in_html": True,
+        "pdf_html_pattern": r"/content/dam/apolloaem/[^\s\"'<>]+\.pdf",
+        "pdf_base_url": "https://www.apollo.com",
     },
     "blackstone": {
         "name": "Blackstone",
@@ -65,6 +69,18 @@ FIRMS: dict[str, dict] = {
         "sitemap_url": "https://www.blackstone.com/sitemap_index.xml",
         "article_pattern": r"blackstone\.com/insights/article/.+",
         "type": "private_equity",
+    },
+    "citadel_securities": {
+        "name": "Citadel Securities",
+        "insights_url": "https://www.citadelsecurities.com/news-and-insights/category/market-insights/",
+        "discovery": "seed_urls",
+        # JS-rendered category page — add known article URLs here as discovered
+        "seed_urls": [
+            ("Per Mare, Necessarium: Views on Rates & Financial Conditions",
+             "https://www.citadelsecurities.com/news-and-insights/per-mare-necessarium-views-on-rates-financial-conditions/"),
+        ],
+        "article_pattern": r"citadelsecurities\.com/news-and-insights/(?!category|in-the-media|policy)[a-z0-9\-]+/?$",
+        "type": "market_maker",
     },
     "oaktree": {
         "name": "Oaktree Capital Management",
@@ -134,11 +150,36 @@ FIRMS: dict[str, dict] = {
 CORPUS_DIR = Path(__file__).parent.parent / "corpus"
 INDEX_PATH = CORPUS_DIR / "index.json"
 JINA_BASE = "https://r.jina.ai/"
-REQUEST_DELAY = 1.5   # seconds between requests
+REQUEST_DELAY = 1.5
 TIMEOUT = 30.0
-
-# Min image file size to bother saving (skip icons/spacers)
 MIN_IMAGE_BYTES = 20_000
+
+# Keywords that mark the start of boilerplate to strip at the end of articles
+_FOOTER_MARKERS = [
+    "important information", "important notice", "important disclosures",
+    "legal disclaimer", "disclaimer", "this material does not constitute",
+    "this document is for informational purposes only",
+    "past performance is not", "not investment advice",
+    "risk factors", "forward-looking statements",
+    "footnotes\n", "endnotes\n",
+    "about kkr\n", "about apollo\n", "about blackstone\n",
+    "about oaktree\n", "about carlyle\n", "about ares\n",
+    "about bridgewater\n",
+    "related insights", "related articles", "explore more",
+    "recommended for you", "you may also like", "more from",
+    "subscribe to", "sign up for",
+    "tags\n",
+    "copyright ©", "all rights reserved",
+    "legal entities disseminating",
+]
+
+# Nav/boilerplate signals — blocks containing these are likely navigation
+_NAV_SIGNALS = [
+    "cookie policy", "manage preferences", "privacy policy",
+    "general public", "institutional investors", "wealth professionals",
+    "select your experience", "login\n",
+    "careers\n", "contact us\n",
+]
 
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
@@ -149,11 +190,11 @@ def _get(url: str, **kwargs) -> httpx.Response | None:
         r.raise_for_status()
         return r
     except Exception as e:
-        print(f"  [warn] GET failed {url}: {e}", file=sys.stderr)
+        print(f"  [warn] GET {url[:80]}: {e}", file=sys.stderr)
         return None
 
 
-def _fetch_via_jina(url: str, max_chars: int = 40000) -> str:
+def _fetch_via_jina(url: str, max_chars: int = 50000) -> str:
     jina_url = f"{JINA_BASE}{url}"
     r = _get(jina_url, headers={"Accept": "text/plain", "X-Return-Format": "markdown"})
     if not r:
@@ -165,23 +206,206 @@ def _fetch_via_jina(url: str, max_chars: int = 40000) -> str:
 def _fetch_pdf_text(url: str) -> str:
     try:
         import io
-        from pypdf import PdfReader
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            from PyPDF2 import PdfReader
         r = _get(url)
         if not r:
             return ""
         reader = PdfReader(io.BytesIO(r.content))
         pages = [page.extract_text() or "" for page in reader.pages]
-        return "\n\n".join(p.strip() for p in pages if p.strip())[:40000]
+        return "\n\n".join(p.strip() for p in pages if p.strip())[:50000]
     except Exception as e:
-        print(f"  [warn] PDF text extraction failed {url}: {e}", file=sys.stderr)
+        print(f"  [warn] PDF text extraction failed {url[:60]}: {e}", file=sys.stderr)
         return ""
 
 
+def _find_pdf_in_html(html: str, pattern: str, base_url: str) -> str | None:
+    """Find a PDF download link in raw HTML using a firm-specific pattern."""
+    matches = re.findall(pattern, html, re.IGNORECASE)
+    if matches:
+        path = matches[0]
+        if path.startswith("http"):
+            return path
+        return base_url.rstrip("/") + "/" + path.lstrip("/")
+    return None
+
+
+# ── Boilerplate stripping ─────────────────────────────────────────────────────
+
+def _strip_boilerplate(text: str) -> str:
+    """
+    Remove nav headers, cookie banners, login sections, and footer boilerplate
+    from Jina-rendered markdown. Keeps the article title and body only.
+
+    Algorithm:
+    1. Find first real prose paragraph: >200 chars, not a link/list/image line.
+    2. Walk back from there (up to 40 lines) to find the nearest H1/H2 heading.
+    3. Start content from that heading (or from the prose paragraph if no heading).
+    4. Cut at first footer marker.
+    5. Collapse excess blank lines.
+    """
+    lines = text.splitlines()
+    n = len(lines)
+
+    # Keywords that disqualify a line from being "real prose"
+    _PROSE_EXCLUDE = [
+        "cookie", "privacy policy", "terms of use", "terms of service",
+        "all rights reserved", "personalize your experience",
+        "analytics tools", "we use cookies",
+        "by continuing", "please review our",
+        "manage preferences", "consent",
+    ]
+
+    def _is_prose(line: str) -> bool:
+        s = line.strip()
+        lower = s.lower()
+        if any(kw in lower for kw in _PROSE_EXCLUDE):
+            return False
+        if s.startswith(("[", "*", "!", "-", "|", "#")):
+            return False
+        if s.count("](") >= 3:  # mostly links
+            return False
+        return True
+
+    # ── Phase 1: find the first real prose paragraph ─────────────────────────
+    prose_idx = -1
+    for i, line in enumerate(lines):
+        if len(line.strip()) > 200 and _is_prose(line):
+            prose_idx = i
+            break
+
+    # Fallback: lower threshold (>120 chars)
+    if prose_idx == -1:
+        for i, line in enumerate(lines):
+            if len(line.strip()) > 120 and _is_prose(line):
+                prose_idx = i
+                break
+
+    if prose_idx == -1:
+        # Can't find prose — return whole text stripped of nav signals
+        cleaned = re.sub(r"\n{3,}", "\n\n", text)
+        return cleaned.strip()
+
+    # ── Phase 2: walk back to find nearest heading ────────────────────────────
+    start_idx = prose_idx
+    for i in range(prose_idx - 1, max(-1, prose_idx - 40), -1):
+        stripped = lines[i].strip()
+        if stripped.startswith("# ") and len(stripped) > 5:
+            # Prefer headings not immediately followed by a nav bullet
+            next_content = ""
+            for j in range(i + 1, min(n, i + 4)):
+                if lines[j].strip():
+                    next_content = lines[j].strip()
+                    break
+            if not next_content.startswith("*") and not next_content.startswith("["):
+                start_idx = i
+                break
+            # Still prefer this H1 over deeper headings
+            if start_idx == prose_idx:
+                start_idx = i
+
+        elif stripped.startswith("## ") and len(stripped) > 5 and start_idx == prose_idx:
+            start_idx = i
+
+    result_lines = lines[start_idx:]
+
+    # ── Phase 3: cut at first footer marker ──────────────────────────────────
+    for i, line in enumerate(result_lines):
+        lower = line.strip().lower()
+        if any(marker in lower for marker in _FOOTER_MARKERS):
+            result_lines = result_lines[:i]
+            break
+
+    # Remove trailing blank lines
+    while result_lines and not result_lines[-1].strip():
+        result_lines.pop()
+
+    content = "\n".join(result_lines).strip()
+
+    # ── Phase 4: collapse excessive blank lines ───────────────────────────────
+    content = re.sub(r"\n{3,}", "\n\n", content)
+
+    return content
+
+
+# ── Link discovery ────────────────────────────────────────────────────────────
+
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
+
+
+def _discover_via_sitemap(sitemap_url: str, article_pattern: str,
+                          skip_pattern: str = "") -> list[tuple[str, str]]:
+    print(f"  Loading sitemap: {sitemap_url}")
+    r = _get(sitemap_url)
+    if not r:
+        return []
+
+    if "<sitemapindex" in r.text or ("<sitemap>" in r.text and "<url>" not in r.text):
+        sub_urls = re.findall(r"<loc>(https?://[^<]+)</loc>", r.text)
+        all_articles: list[tuple[str, str]] = []
+        for sub in sub_urls:
+            time.sleep(0.3)
+            sub_r = _get(sub)
+            if sub_r:
+                all_articles.extend(_urls_from_sitemap_xml(sub_r.text, article_pattern, skip_pattern))
+        return all_articles
+
+    return _urls_from_sitemap_xml(r.text, article_pattern, skip_pattern)
+
+
+def _urls_from_sitemap_xml(xml: str, article_pattern: str,
+                           skip_pattern: str = "") -> list[tuple[str, str]]:
+    pattern = re.compile(article_pattern, re.IGNORECASE)
+    skip = re.compile(skip_pattern, re.IGNORECASE) if skip_pattern else None
+    urls = re.findall(r"<loc>(https?://[^<]+)</loc>", xml)
+    results = []
+    for url in urls:
+        clean = url.strip().rstrip("/")
+        if not pattern.search(clean):
+            continue
+        if skip and skip.search(clean):
+            continue
+        slug = clean.rstrip("/").split("/")[-1].replace("-", " ").title()
+        results.append((slug, clean))
+    return results
+
+
+def _discover_via_jina_links(insights_url: str, article_pattern: str,
+                             skip_pattern: str = "") -> list[tuple[str, str]]:
+    print(f"  Discovering from: {insights_url}")
+    content = _fetch_via_jina(insights_url, max_chars=80000)
+    if not content:
+        return []
+
+    seen: set[str] = set()
+    results: list[tuple[str, str]] = []
+    pattern = re.compile(article_pattern, re.IGNORECASE)
+    skip = re.compile(skip_pattern, re.IGNORECASE) if skip_pattern else None
+
+    for match in _MD_LINK_RE.finditer(content):
+        title = match.group(1).strip()
+        url = match.group(2).strip()
+        parsed = urlparse(url)
+        clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+        if clean_url in seen:
+            continue
+        if not pattern.search(clean_url):
+            continue
+        if skip and skip.search(clean_url):
+            continue
+        if any(x in clean_url for x in ("/tag/", "/category/", "/author/", "/page/", "/feed")):
+            continue
+        seen.add(clean_url)
+        results.append((title, clean_url))
+
+    return results
+
+
+# ── Image extraction ──────────────────────────────────────────────────────────
+
 def _extract_images_from_html(html: str, base_url: str, out_dir: Path) -> list[str]:
-    """
-    Extract chart-like images from raw HTML and save them to out_dir.
-    Returns list of saved filenames.
-    """
     img_re = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
     saved = []
     counter = 0
@@ -189,37 +413,27 @@ def _extract_images_from_html(html: str, base_url: str, out_dir: Path) -> list[s
 
     for match in img_re.finditer(html):
         src = match.group(1).strip()
-        if not src or src.startswith("data:"):
+        if not src or src.startswith("data:") or "{" in src or "}" in src:
             continue
-        # Make absolute
         full_url = urljoin(base_url, src)
         if full_url in seen:
             continue
         seen.add(full_url)
 
-        # Skip responsive image URL templates (e.g. KKR uses {.width} placeholders)
-        if "{" in full_url or "}" in full_url:
-            continue
-
-        # Skip obvious non-charts: icons, logos, avatars, social, flags
         skip_patterns = ["logo", "icon", "avatar", "social", "flag", "arrow",
                          "linkedin", "twitter", "facebook", "header", "nav",
-                         "menu", "close", "search", "spinner", "loader"]
+                         "menu", "close", "search", "spinner", "loader",
+                         "button", "badge", "thumbnail"]
         if any(p in full_url.lower() for p in skip_patterns):
             continue
 
-        # Only save real image formats
         ext = Path(urlparse(full_url).path).suffix.lower()
         if ext not in (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"):
             continue
 
-        time.sleep(0.5)
+        time.sleep(0.3)
         r = _get(full_url)
-        if not r:
-            continue
-
-        # Skip tiny images (icons, spacers)
-        if len(r.content) < MIN_IMAGE_BYTES:
+        if not r or len(r.content) < MIN_IMAGE_BYTES:
             continue
 
         counter += 1
@@ -232,17 +446,15 @@ def _extract_images_from_html(html: str, base_url: str, out_dir: Path) -> list[s
 
 
 def _extract_images_from_pdf(pdf_bytes: bytes, out_dir: Path) -> list[str]:
-    """Extract images from a PDF using pymupdf (fitz) if available."""
     try:
-        import fitz  # pymupdf
+        import fitz  # PyMuPDF
     except ImportError:
-        return []  # pymupdf not installed — skip silently
-
+        return []  # PyMuPDF not installed — skip PDF image extraction
     saved = []
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         counter = 0
-        for page_num, page in enumerate(doc):
+        for page in doc:
             for img in page.get_images(full=True):
                 xref = img[0]
                 base_image = doc.extract_image(xref)
@@ -257,76 +469,46 @@ def _extract_images_from_pdf(pdf_bytes: bytes, out_dir: Path) -> list[str]:
                 (out_dir / fname).write_bytes(img_bytes)
                 saved.append(fname)
     except Exception as e:
-        print(f"  [warn] PDF image extraction failed: {e}", file=sys.stderr)
+        print(f"  [warn] PDF image extraction: {e}", file=sys.stderr)
     return saved
 
 
-# ── Link discovery ────────────────────────────────────────────────────────────
-
-_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
-
-
-def _discover_via_sitemap(sitemap_url: str, article_pattern: str) -> list[tuple[str, str]]:
-    """Crawl a sitemap (or sitemap index) and return matching article URLs."""
-    print(f"  Loading sitemap: {sitemap_url}")
-    r = _get(sitemap_url)
-    if not r:
-        return []
-
-    # Check if this is a sitemap index (contains nested sitemaps)
-    if "<sitemapindex" in r.text or ("<sitemap>" in r.text and "<loc>" in r.text
-                                      and "<url>" not in r.text):
-        sub_urls = re.findall(r"<loc>(https?://[^<]+)</loc>", r.text)
-        all_articles: list[tuple[str, str]] = []
-        for sub in sub_urls:
-            time.sleep(0.3)
-            sub_r = _get(sub)
-            if sub_r:
-                all_articles.extend(_urls_from_sitemap_xml(sub_r.text, article_pattern))
-        return all_articles
-
-    return _urls_from_sitemap_xml(r.text, article_pattern)
-
-
-def _urls_from_sitemap_xml(xml: str, article_pattern: str) -> list[tuple[str, str]]:
-    pattern = re.compile(article_pattern, re.IGNORECASE)
-    urls = re.findall(r"<loc>(https?://[^<]+)</loc>", xml)
-    results = []
-    for url in urls:
-        clean = url.strip().rstrip("/")
-        if pattern.search(clean):
-            # Title is just the slug for now — will be overwritten when article is fetched
-            slug = clean.rstrip("/").split("/")[-1].replace("-", " ").title()
-            results.append((slug, clean))
-    return results
-
-
-def _discover_via_jina_links(insights_url: str, article_pattern: str) -> list[tuple[str, str]]:
-    """Discover article links by fetching the insights index page via Jina Reader."""
-    print(f"  Discovering from: {insights_url}")
-    content = _fetch_via_jina(insights_url, max_chars=60000)
-    if not content:
-        return []
-
+def _extract_images_from_markdown(md: str, out_dir: Path,
+                                   existing_count: int = 0) -> list[str]:
+    """Download images linked inline in Jina markdown: ![alt](url)"""
+    img_re = re.compile(r"!\[[^\]]*\]\((https?://[^)]+)\)")
+    saved = []
+    counter = existing_count
     seen: set[str] = set()
-    results: list[tuple[str, str]] = []
-    pattern = re.compile(article_pattern, re.IGNORECASE)
 
-    for match in _MD_LINK_RE.finditer(content):
-        title = match.group(1).strip()
-        url = match.group(2).strip()
+    for match in img_re.finditer(md):
+        url = match.group(1).strip()
         parsed = urlparse(url)
-        clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
-        if clean_url in seen:
+        if url in seen:
             continue
-        if not pattern.search(clean_url):
+        if "{" in url or "}" in url:
             continue
-        if any(x in clean_url for x in ("/tag/", "/category/", "/author/", "/page/", "/feed")):
+        skip_patterns = ["logo", "icon", "avatar", "social", "flag", "arrow",
+                         "linkedin", "twitter", "facebook", "header", "nav"]
+        if any(p in url.lower() for p in skip_patterns):
             continue
-        seen.add(clean_url)
-        results.append((title, clean_url))
+        ext = Path(parsed.path).suffix.lower()
+        if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"):
+            ext = ".png"  # default for extensionless image URLs
+        seen.add(url)
 
-    return results
+        time.sleep(0.3)
+        r = _get(url)
+        if not r or len(r.content) < MIN_IMAGE_BYTES:
+            continue
+
+        counter += 1
+        save_ext = ext if ext != ".webp" else ".png"
+        fname = f"img_{counter:02d}{save_ext}"
+        (out_dir / fname).write_bytes(r.content)
+        saved.append(fname)
+
+    return saved
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
@@ -360,13 +542,13 @@ def _already_downloaded(index: dict, url: str) -> bool:
 
 # ── Per-article fetcher ───────────────────────────────────────────────────────
 
-def _fetch_article(url: str, firm_key: str, firm_name: str, title: str, index: dict) -> bool:
-    """
-    Fetch one article (text + images) and save to corpus/<firm>/<slug>/.
-    Returns True if saved successfully.
-    """
+def _fetch_article(url: str, firm_key: str, firm_cfg: dict, title: str, index: dict) -> bool:
+    firm_name = firm_cfg["name"]
     is_pdf = url.lower().endswith(".pdf")
-    article_dir = None  # created once we know the title
+
+    date_str = datetime.utcnow().strftime("%Y-%m")
+    article_dir: Path | None = None
+    images: list[str] = []
 
     if is_pdf:
         r = _get(url)
@@ -374,48 +556,93 @@ def _fetch_article(url: str, firm_key: str, firm_name: str, title: str, index: d
             return False
         pdf_bytes = r.content
         text = _fetch_pdf_text(url)
-        if not text or len(text) < 200:
+        if not text or len(text) < 300:
             return False
-
-        # Extract title from PDF first page if possible
         first_line = text.split("\n")[0].strip()
         if 10 < len(first_line) < 120:
             title = first_line
-
-        date_str = datetime.utcnow().strftime("%Y-%m")
-        slug_name = f"{date_str}_{_slug(title)}_{_url_hash(url)}"
-        article_dir = CORPUS_DIR / firm_key / slug_name
+        article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
         article_dir.mkdir(parents=True, exist_ok=True)
-
         images = _extract_images_from_pdf(pdf_bytes, article_dir)
+        content = text
 
     else:
-        # Fetch via Jina for clean markdown text
-        content = _fetch_via_jina(url)
-        if not content or len(content) < 200:
-            return False
+        # Check if firm has a PDF in the raw HTML — download that instead if possible
+        pdf_url: str | None = None
+        if firm_cfg.get("pdf_in_html"):
+            raw_r = _get(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
+            if raw_r:
+                pdf_url = _find_pdf_in_html(
+                    raw_r.text,
+                    firm_cfg["pdf_html_pattern"],
+                    firm_cfg.get("pdf_base_url", ""),
+                )
+                # Also grab images from raw HTML
+                article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
+                article_dir.mkdir(parents=True, exist_ok=True)
+                images = _extract_images_from_html(raw_r.text, url, article_dir)
 
-        # Extract a better title from the first H1 in the markdown
-        h1 = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
-        if h1 and len(h1.group(1)) < 150:
-            title = h1.group(1).strip()
+        if pdf_url:
+            print(f"    [pdf] {pdf_url[-60:]}")
+            time.sleep(REQUEST_DELAY)
+            pdf_text = _fetch_pdf_text(pdf_url)
+            if pdf_text and len(pdf_text) > 500:
+                content = pdf_text
+                # Also get any additional images from the PDF
+                pdf_r = _get(pdf_url)
+                if pdf_r:
+                    extra_imgs = _extract_images_from_pdf(pdf_r.content, article_dir)
+                    images.extend(extra_imgs)
+            else:
+                # PDF failed — fall through to HTML
+                pdf_url = None
 
-        date_str = datetime.utcnow().strftime("%Y-%m")
-        slug_name = f"{date_str}_{_slug(title)}_{_url_hash(url)}"
-        article_dir = CORPUS_DIR / firm_key / slug_name
+        if not pdf_url:
+            jina_content = _fetch_via_jina(url)
+            if not jina_content or len(jina_content) < 300:
+                return False
+
+            # Guard: skip pages that returned a "not found" result
+            if re.search(r"page.{0,10}not found", jina_content[:500], re.IGNORECASE):
+                print(f"    [skip] Page not found: {url[:70]}", file=sys.stderr)
+                return False
+
+            # Extract better title from H1 (prefer the LAST H1 — Jina often
+            # puts a concatenated page-title H1 first and the clean article H1 later)
+            h1_matches = list(re.finditer(r"^#\s+(.+)$", jina_content, re.MULTILINE))
+            if h1_matches:
+                # Use the last H1 that's reasonably sized
+                for m in reversed(h1_matches):
+                    candidate = m.group(1).strip()
+                    # Strip common firm-name suffixes appended by Jina
+                    for suffix in [" | Apollo", "Apollo Global Management",
+                                   " | KKR", " | Blackstone", " | Oaktree",
+                                   " | Bridgewater", " | Citadel"]:
+                        candidate = candidate.replace(suffix, "").strip()
+                    if 5 < len(candidate) < 200:
+                        title = candidate
+                        break
+
+            # Strip boilerplate
+            content = _strip_boilerplate(jina_content)
+            if len(content) < 300:
+                content = jina_content  # stripping too aggressive — use raw
+
+            if not article_dir:
+                article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
+                article_dir.mkdir(parents=True, exist_ok=True)
+                # Get images from HTML if accessible, otherwise extract from Jina markdown
+                raw_r = _get(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
+                if raw_r and "text/html" in raw_r.headers.get("content-type", ""):
+                    images = _extract_images_from_html(raw_r.text, url, article_dir)
+                # Always supplement with images found in Jina markdown
+                md_images = _extract_images_from_markdown(content, article_dir, len(images))
+                images.extend(md_images)
+
+    if not article_dir:
+        article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
         article_dir.mkdir(parents=True, exist_ok=True)
 
-        text = content
-
-        # Also fetch raw HTML to extract chart images
-        raw_r = _get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; research-archiver/1.0)"})
-        if raw_r and raw_r.headers.get("content-type", "").startswith("text/html"):
-            time.sleep(0.5)
-            images = _extract_images_from_html(raw_r.text, url, article_dir)
-        else:
-            images = []
-
-    # Write article markdown
     frontmatter = (
         f"---\n"
         f"title: \"{title.replace(chr(34), chr(39))}\"\n"
@@ -426,9 +653,8 @@ def _fetch_article(url: str, firm_key: str, firm_name: str, title: str, index: d
         f"images: {json.dumps(images)}\n"
         f"---\n\n"
     )
-    (article_dir / "article.md").write_text(frontmatter + text, encoding="utf-8")
+    (article_dir / "article.md").write_text(frontmatter + content, encoding="utf-8")
 
-    # Update index
     index.setdefault("articles", []).append({
         "firm": firm_key,
         "firm_name": firm_name,
@@ -436,7 +662,7 @@ def _fetch_article(url: str, firm_key: str, firm_name: str, title: str, index: d
         "url": url,
         "dir": str(article_dir.relative_to(CORPUS_DIR)),
         "downloaded": datetime.utcnow().strftime("%Y-%m-%d"),
-        "chars": len(text),
+        "chars": len(content),
         "images": images,
     })
     return True
@@ -455,17 +681,19 @@ def ingest_firm(firm_key: str, max_articles: int = 50, refresh: bool = False) ->
     print(f"{'='*60}")
 
     index = _load_index()
+    skip_pattern = firm.get("skip_pattern", "")
 
-    # Discover article links
     if firm["discovery"] == "sitemap":
-        links = _discover_via_sitemap(firm["sitemap_url"], firm["article_pattern"])
+        links = _discover_via_sitemap(firm["sitemap_url"], firm["article_pattern"], skip_pattern)
+    elif firm["discovery"] == "seed_urls":
+        links = list(firm.get("seed_urls", []))
+        print(f"  Using {len(links)} seeded URLs")
     else:
-        links = _discover_via_jina_links(firm["insights_url"], firm["article_pattern"])
+        links = _discover_via_jina_links(firm["insights_url"], firm["article_pattern"], skip_pattern)
 
     print(f"  Found {len(links)} candidate articles")
-
     if not links:
-        print(f"  No articles found — site may require JS rendering or pattern may need adjustment")
+        print(f"  No articles found — site may require JS rendering or pattern needs adjustment")
         return 0
 
     saved = 0
@@ -477,7 +705,7 @@ def ingest_firm(firm_key: str, max_articles: int = 50, refresh: bool = False) ->
         print(f"  [{i+1}/{min(len(links), max_articles)}] {title[:70]}")
         time.sleep(REQUEST_DELAY)
 
-        ok = _fetch_article(url, firm_key, firm["name"], title, index)
+        ok = _fetch_article(url, firm_key, firm, title, index)
         if ok:
             entry = index["articles"][-1]
             img_note = f", {len(entry['images'])} charts" if entry["images"] else ""
@@ -505,11 +733,10 @@ def main() -> None:
         print("\nRegistered firms:")
         for key, firm in FIRMS.items():
             disc = firm["discovery"]
-            print(f"  {key:<15} {firm['name']:<35} [{firm['type']}] (discovery: {disc})")
+            print(f"  {key:<20} {firm['name']:<35} [{firm['type']}] ({disc})")
         return
 
     CORPUS_DIR.mkdir(exist_ok=True)
-
     readme = CORPUS_DIR / "README.md"
     if not readme.exists():
         readme.write_text(
@@ -518,25 +745,18 @@ def main() -> None:
             "## Structure\n\n"
             "```\n"
             "corpus/\n"
-            "├── index.json                    ← full metadata manifest\n"
+            "├── index.json                    <- full metadata manifest\n"
             "├── kkr/\n"
             "│   ├── 2024-01_regime_change_abc123/\n"
-            "│   │   ├── article.md            ← full article text\n"
-            "│   │   ├── img_01.png            ← charts / figures from the article\n"
+            "│   │   ├── article.md            <- cleaned article text + YAML frontmatter\n"
+            "│   │   ├── img_01.png            <- charts / figures from the article\n"
             "│   │   └── img_02.png\n"
             "│   └── ...\n"
             "├── apollo/\n"
             "├── oaktree/\n"
             "└── ...\n"
             "```\n\n"
-            "## Adding a new firm\n\n"
-            "Edit `scripts/ingest_corpus.py` — add an entry to `FIRMS` with:\n"
-            "- `insights_url`: the listing page URL\n"
-            "- `discovery`: `sitemap` (preferred) or `jina_links`\n"
-            "- `sitemap_url`: if using sitemap discovery\n"
-            "- `article_pattern`: regex to identify article URLs on that domain\n"
-            "- `type`: firm category\n\n"
-            "Then run: `python scripts/ingest_corpus.py --firm <key>`\n",
+            "Run: `python scripts/ingest_corpus.py --list` to see all registered firms.\n",
             encoding="utf-8",
         )
 
@@ -552,7 +772,6 @@ def main() -> None:
         print(f"\n{'='*60}")
         print(f"Total new articles saved: {total}")
 
-    # Summary
     index = _load_index()
     articles = index.get("articles", [])
     by_firm: dict[str, dict] = {}

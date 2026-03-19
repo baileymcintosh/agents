@@ -37,7 +37,7 @@
     {
       "firm": "kkr",
       "firm_name": "KKR",
-      "title": "Privy: Accelerating Indonesia’s Digital Transformation | KKR",
+      "title": "Privy: Accelerating IndonesiaÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s Digital Transformation | KKR",
       "url": "https://www.kkr.com/insights/privy-accelerating-indonesias-digital-transformation",
       "dir": "kkr\\2026-03_privy_accelerating_indonesia_s_digital_transformation_k_ee573a64",
       "downloaded": "2026-03-19",
@@ -61,11 +61,11 @@
     {
       "firm": "apollo",
       "firm_name": "Apollo Global Management",
-      "title": "Overheard @ Apollo: The Private Capital vs. Bank ModelApollo Global Management",
-      "url": "https://www.apollo.com/insights-news/insights/overheard-at-apollo/2023/03/overheard-at-apollo-the-private-capital-vs-bank-model",
-      "dir": "apollo\\2026-03_overheard_apollo_the_private_capital_vs_bank_modelapoll_2f849f39",
+      "title": "Marc Rowan Fireside Chat at Goldman Sachsâ€™ US Financial Services Conference",
+      "url": "https://www.apollo.com/insights-news/insights/2023/01/marc-rowan-fireside-chat-at-goldman-sachs-us-financial-services-conference",
+      "dir": "apollo\\2026-03_marc_rowan_fireside_chat_at_goldman_sachs_us_financial__f7c8313b",
       "downloaded": "2026-03-19",
-      "chars": 21085,
+      "chars": 6869,
       "images": [
         "img_01.png",
         "img_02.png",
@@ -73,17 +73,18 @@
         "img_04.png",
         "img_05.png",
         "img_06.png",
-        "img_07.jpg"
+        "img_07.png",
+        "img_08.png"
       ]
     },
     {
       "firm": "apollo",
       "firm_name": "Apollo Global Management",
-      "title": "Overheard @ Apollo: The Media & Entertainment IndustryApollo Global Management",
-      "url": "https://www.apollo.com/insights-news/insights/overheard-at-apollo/2023/03/overheard-at-apollo-the-media-and-entertainment-industry",
-      "dir": "apollo\\2026-03_overheard_apollo_the_media_entertainment_industryapollo_939ee1ef",
+      "title": "At the Forefront of Democratizing Finance",
+      "url": "https://www.apollo.com/insights-news/insights/2023/01/at-the-forefront-of-democratizing-finance",
+      "dir": "apollo\\2026-03_at_the_forefront_of_democratizing_finance_ae30538a",
       "downloaded": "2026-03-19",
-      "chars": 21183,
+      "chars": 5439,
       "images": [
         "img_01.png",
         "img_02.png",
@@ -91,34 +92,91 @@
         "img_04.png",
         "img_05.png",
         "img_06.png",
-        "img_07.jpg"
+        "img_07.png",
+        "img_08.jpg"
       ]
     },
     {
       "firm": "apollo",
       "firm_name": "Apollo Global Management",
-      "title": "Overheard @ Apollo: On the March CPI ReportApollo Global Management",
-      "url": "https://www.apollo.com/insights-news/insights/overheard-at-apollo/2023/04/overheard-at-apollo-on-the-march-cpi-report",
-      "dir": "apollo\\2026-03_overheard_apollo_on_the_march_cpi_reportapollo_global_m_033b36a0",
+      "title": "Opportunities In Us Real Estate Three Ideas For 2023 And Beyond",
+      "url": "https://www.apollo.com/insights-news/insights/2023/01/opportunities-in-us-real-estate-three-ideas-for-2023-and-beyond",
+      "dir": "apollo\\2026-03_opportunities_in_us_real_estate_three_ideas_for_2023_an_1335e34b",
       "downloaded": "2026-03-19",
-      "chars": 21006,
+      "chars": 15958,
       "images": [
         "img_01.png",
         "img_02.png",
         "img_03.png",
         "img_04.png",
         "img_05.png",
-        "img_06.png"
+        "img_06.jpg",
+        "img_07.jpg",
+        "img_08.png",
+        "img_09.png",
+        "img_10.png",
+        "img_11.png"
+      ]
+    },
+    {
+      "firm": "citadel_securities",
+      "firm_name": "Citadel Securities",
+      "title": "Per Mare Necessarium: Views on Rates and Financial Conditions",
+      "url": "https://www.citadelsecurities.com/news-and-insights/per-mare-necessarium-views-on-rates-financial-conditions/",
+      "dir": "citadel_securities\\2026-03_per_mare_necessarium_views_on_rates_and_financial_condi_cb66eae9",
+      "downloaded": "2026-03-19",
+      "chars": 7905,
+      "images": []
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "6 Takeaways from Apollo’s Portfolio Tech & Digital Conference",
+      "url": "https://www.apollo.com/insights-news/insights/2023/07/6-takeaways-from-apollo-portfolio-tech-digital-conference",
+      "dir": "apollo\\2026-03_6_takeaways_from_apollo_portfolio_tech_digital_conferen_4e763f25",
+      "downloaded": "2026-03-19",
+      "chars": 6427,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.jpg",
+        "img_07.png",
+        "img_08.png",
+        "img_09.png"
       ]
     },
     {
       "firm": "apollo",
       "firm_name": "Apollo Global Management",
-      "title": "Overheard @ Apollo: Torsten Slok on Barbie, the FOMC Meeting and Japanese Yield Curve ControlApollo Global Management",
-      "url": "https://www.apollo.com/insights-news/insights/overheard-at-apollo/2023/08/overheard-apollo-torsten-slok-on-barbie-the-fomc-meeting-and-japanese-yield-curve-control",
-      "dir": "apollo\\2026-03_overheard_apollo_torsten_slok_on_barbie_the_fomc_meetin_bf6c3962",
+      "title": "Beyond Beta How To Use Alternatives To Replace Public Equity",
+      "url": "https://www.apollo.com/insights-news/insights/2023/07/beyond-beta-how-to-use-alternatives-to-replace-public-equity",
+      "dir": "apollo\\2026-03_beyond_beta_how_to_use_alternatives_to_replace_public_e_9f706b6f",
       "downloaded": "2026-03-19",
-      "chars": 22072,
+      "chars": 50000,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.jpg",
+        "img_07.png",
+        "img_08.png",
+        "img_09.png",
+        "img_10.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Mid Year Outlook Inflation To Keep Cost Of Capital High Until 2024",
+      "url": "https://www.apollo.com/insights-news/insights/2023/07/mid-year-outlook-inflation-to-keep-cost-of-capital-high-until-2024",
+      "dir": "apollo\\2026-03_mid_year_outlook_inflation_to_keep_cost_of_capital_high_cfd37f34",
+      "downloaded": "2026-03-19",
+      "chars": 50000,
       "images": [
         "img_01.png",
         "img_02.png",
@@ -126,17 +184,40 @@
         "img_04.png",
         "img_05.png",
         "img_06.png",
-        "img_07.jpg"
+        "img_07.png",
+        "img_08.png",
+        "img_09.png"
       ]
     },
     {
       "firm": "apollo",
       "firm_name": "Apollo Global Management",
-      "title": "Overheard @ Apollo - Mike DowningApollo Global Management",
-      "url": "https://www.apollo.com/insights-news/insights/overheard-at-apollo/2023/07/overheard-at-apollo-mike-downing",
-      "dir": "apollo\\2026-03_overheard_apollo_mike_downingapollo_global_management_4925cac4",
+      "title": "Clean Transition Investing  From Managing Risk To Unprecedented ",
+      "url": "https://www.apollo.com/insights-news/insights/2023/07/clean-transition-investing--from-managing-risk-to-unprecedented-",
+      "dir": "apollo\\2026-03_clean_transition_investing_from_managing_risk_to_unprec_f6bbbd2f",
       "downloaded": "2026-03-19",
-      "chars": 20625,
+      "chars": 50000,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.jpg",
+        "img_07.png",
+        "img_08.png",
+        "img_09.png",
+        "img_10.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Strengthening Infrastructure: DCLI & Blume",
+      "url": "https://www.apollo.com/insights-news/insights/2023/07/strengthening-infrastructure-dcli-blume",
+      "dir": "apollo\\2026-03_strengthening_infrastructure_dcli_blume_97041796",
+      "downloaded": "2026-03-19",
+      "chars": 3464,
       "images": [
         "img_01.png",
         "img_02.png",
@@ -144,9 +225,240 @@
         "img_04.png",
         "img_05.png",
         "img_06.png",
-        "img_07.jpg"
+        "img_07.png",
+        "img_08.jpg"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "ATLAS SP Partners",
+      "url": "https://www.apollo.com/insights-news/insights/2023/06/atlas-sp-partners",
+      "dir": "apollo\\2026-03_atlas_sp_partners_6eaa4e57",
+      "downloaded": "2026-03-19",
+      "chars": 9546,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.jpg",
+        "img_07.png",
+        "img_08.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Announcing The Launch Of Our 14Th Annual Sustainability Report",
+      "url": "https://www.apollo.com/insights-news/insights/2023/06/announcing-the-launch-of-our-14th-annual-sustainability-report",
+      "dir": "apollo\\2026-03_announcing_the_launch_of_our_14th_annual_sustainability_52de0745",
+      "downloaded": "2026-03-19",
+      "chars": 50000,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.png",
+        "img_07.png",
+        "img_08.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Impact In Focus Apollos 2022 Annual Impact Report",
+      "url": "https://www.apollo.com/insights-news/insights/2023/05/impact-in-focus-apollos-2022-annual-impact-report",
+      "dir": "apollo\\2026-03_impact_in_focus_apollos_2022_annual_impact_report_57685b9d",
+      "downloaded": "2026-03-19",
+      "chars": 46673,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.jpg",
+        "img_07.png",
+        "img_08.png",
+        "img_09.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Private Equity Investing In A New Paradigm",
+      "url": "https://www.apollo.com/insights-news/insights/2023/05/private-equity-investing-in-a-new-paradigm",
+      "dir": "apollo\\2026-03_private_equity_investing_in_a_new_paradigm_53f209c4",
+      "downloaded": "2026-03-19",
+      "chars": 50000,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.jpg",
+        "img_07.png",
+        "img_08.jpg",
+        "img_09.jpg"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Apollo Hybrid Value on the Launch, Growth and Sale of Blume Global",
+      "url": "https://www.apollo.com/insights-news/insights/2023/04/apollo-hybrid-value-on-the-launch-growth-and-sale-of-blume-global",
+      "dir": "apollo\\2026-03_apollo_hybrid_value_on_the_launch_growth_and_sale_of_bl_1b369c53",
+      "downloaded": "2026-03-19",
+      "chars": 4545,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.png",
+        "img_07.png",
+        "img_08.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "The Expanding Opportunities For Sponsor And Secondary Solutions",
+      "url": "https://www.apollo.com/insights-news/insights/2023/03/the-expanding-opportunities-for-sponsor-and-secondary-solutions",
+      "dir": "apollo\\2026-03_the_expanding_opportunities_for_sponsor_and_secondary_s_b753fcb9",
+      "downloaded": "2026-03-19",
+      "chars": 34197,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.jpg"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Infrastructure Investing Embracing Complexity In Times Of Structural Change",
+      "url": "https://www.apollo.com/insights-news/insights/2023/03/infrastructure-investing-embracing-complexity-in-times-of-structural-change",
+      "dir": "apollo\\2026-03_infrastructure_investing_embracing_complexity_in_times__da68e182",
+      "downloaded": "2026-03-19",
+      "chars": 50000,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.jpg",
+        "img_07.png",
+        "img_08.png",
+        "img_09.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Expanding Opportunity in the Alts Industry with AltFinance CEO Marcus Shaw",
+      "url": "https://www.apollo.com/insights-news/insights/2023/02/expanding-opportunity-in-the-alts-industry-with-altfinance-ceo-marcus-shaw",
+      "dir": "apollo\\2026-03_expanding_opportunity_in_the_alts_industry_with_altfina_f0993bb1",
+      "downloaded": "2026-03-19",
+      "chars": 3590,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.png",
+        "img_07.png",
+        "img_08.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Why investors are leaning into alternatives",
+      "url": "https://www.apollo.com/insights-news/insights/2023/02/why-investors-are-leaning-into-alternatives",
+      "dir": "apollo\\2026-03_why_investors_are_leaning_into_alternatives_58ec5b3f",
+      "downloaded": "2026-03-19",
+      "chars": 1362,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.jpg",
+        "img_07.png",
+        "img_08.png",
+        "img_09.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Apollo Opportunity Foundation Awards Nearly $3M in Employee-Directed Grants Toward Nonprofits Working to Expand Opportunity",
+      "url": "https://www.apollo.com/insights-news/insights/2023/02/apollo-opportunity-foundation-awards",
+      "dir": "apollo\\2026-03_apollo_opportunity_foundation_awards_e189eafa",
+      "downloaded": "2026-03-19",
+      "chars": 4700,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.png",
+        "img_07.png",
+        "img_08.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Purpose-Built Origination: Midcap Financial",
+      "url": "https://www.apollo.com/insights-news/insights/2023/08/purpose-built-origination--midcap-financial-",
+      "dir": "apollo\\2026-03_purpose_built_origination_midcap_financial_b811483c",
+      "downloaded": "2026-03-19",
+      "chars": 3324,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.png",
+        "img_07.jpg",
+        "img_08.jpg"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Summer ACT Season 2023",
+      "url": "https://www.apollo.com/insights-news/insights/2023/09/summer-act-season-2023",
+      "dir": "apollo\\2026-03_summer_act_season_2023_3eed904e",
+      "downloaded": "2026-03-19",
+      "chars": 627,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.jpg",
+        "img_07.png",
+        "img_08.png"
       ]
     }
   ],
-  "last_updated": "2026-03-19T17:59:22.004644"
+  "last_updated": "2026-03-19T19:33:26.145324"
 }
