@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import os
-from typing import Any
 import urllib.parse
+from pathlib import Path
+from typing import Any
 
 import httpx
 try:
@@ -20,6 +22,12 @@ TAVILY_URL = "https://api.tavily.com/search"
 
 # Module-level flag so we stop retrying Tavily after a quota error this session
 _TAVILY_QUOTA_EXCEEDED = False
+_DOCUMENT_DIR = Path(os.getenv("REPORTS_DIR", "reports")) / "documents"
+
+try:
+    from pypdf import PdfReader
+except ImportError:  # pragma: no cover - optional runtime dependency in minimal envs
+    PdfReader = None  # type: ignore[assignment]
 
 
 def _duckduckgo_search(query: str, max_results: int = 8) -> list[dict[str, Any]]:
@@ -151,6 +159,86 @@ def fetch_url(url: str, max_chars: int = 12000) -> str:
         return f"Could not fetch content from {url}: {e}"
 
 
+def _looks_like_pdf(url: str, content_type: str = "") -> bool:
+    return url.lower().endswith(".pdf") or "application/pdf" in content_type.lower()
+
+
+def _pdf_storage_path(url: str) -> Path:
+    safe = urllib.parse.quote_plus(url)[:120]
+    _DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
+    return _DOCUMENT_DIR / f"{safe}.pdf"
+
+
+def _extract_pdf_text(pdf_bytes: bytes, max_pages: int = 40, max_chars: int = 20000) -> tuple[str, int]:
+    if PdfReader is None:
+        raise RuntimeError("pypdf is not installed.")
+
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    page_count = len(reader.pages)
+    sections: list[str] = []
+    total_chars = 0
+
+    for idx, page in enumerate(reader.pages[:max_pages], start=1):
+        page_text = (page.extract_text() or "").strip()
+        if not page_text:
+            continue
+        chunk = f"## Page {idx}\n{page_text}"
+        sections.append(chunk)
+        total_chars += len(chunk)
+        if total_chars >= max_chars:
+            break
+
+    text = "\n\n".join(sections)
+    if len(text) > max_chars:
+        text = text[:max_chars] + f"\n\n[... PDF content truncated at {max_chars} chars ...]"
+    return text, page_count
+
+
+def fetch_document(url: str, max_chars: int = 20000) -> str:
+    """
+    Fetch a research document. If the URL is a PDF, download and parse the PDF.
+    Otherwise fall back to fetch_url for HTML-like content.
+    """
+    if not url or not url.startswith("http"):
+        return f"Invalid URL: {url}"
+
+    try:
+        response = httpx.get(url, timeout=45.0, follow_redirects=True)
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+
+        if _looks_like_pdf(url, content_type):
+            pdf_bytes = response.content
+            pdf_path = _pdf_storage_path(url)
+            pdf_path.write_bytes(pdf_bytes)
+            try:
+                text, page_count = _extract_pdf_text(pdf_bytes, max_chars=max_chars)
+            except Exception as pdf_error:
+                logger.warning(f"[search] PDF parse failed for '{url}', falling back to Jina: {pdf_error}")
+                fallback = fetch_url(url, max_chars=max_chars)
+                return (
+                    f"# Document Fetch\n\n"
+                    f"**Source:** {url}\n"
+                    f"**Type:** PDF (fallback parse)\n"
+                    f"**Saved:** {pdf_path}\n\n"
+                    f"{fallback}"
+                )
+
+            return (
+                f"# Document Fetch\n\n"
+                f"**Source:** {url}\n"
+                f"**Type:** PDF\n"
+                f"**Pages:** {page_count}\n"
+                f"**Saved:** {pdf_path}\n\n"
+                f"{text}"
+            )
+
+        return fetch_url(url, max_chars=max_chars)
+    except Exception as e:
+        logger.warning(f"[search] fetch_document failed for '{url}': {e}")
+        return f"Could not fetch document from {url}: {e}"
+
+
 def format_search_results(results: list[dict[str, Any]]) -> str:
     """Format search results into a readable string for inclusion in agent prompts."""
     if not results:
@@ -207,6 +295,24 @@ FETCH_URL_TOOL_DEFINITION: dict[str, Any] = {
             "url": {
                 "type": "string",
                 "description": "A fully-qualified http(s) URL to fetch.",
+            },
+        },
+        "required": ["url"],
+    },
+}
+
+FETCH_DOCUMENT_TOOL_DEFINITION: dict[str, Any] = {
+    "name": "fetch_document",
+    "description": (
+        "Fetch a research document or paper. Detects PDFs, downloads them, and parses page text when possible. "
+        "Use this for research papers, policy PDFs, filings, and long-form reports."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "A fully-qualified http(s) URL to a document or paper.",
             },
         },
         "required": ["url"],

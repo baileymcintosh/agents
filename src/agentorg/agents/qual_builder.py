@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - minimal test environment fallback
 from agentorg import config
 from agentorg.evidence import extract_json_block
 from agentorg.messaging import AgentMessage, AgentMessenger
-from agentorg.tools.search import fetch_url, format_search_results, web_search
+from agentorg.tools.search import fetch_document, fetch_url, format_search_results, web_search
 
 
 # OpenAI tool definition for web search
@@ -66,6 +66,24 @@ _FETCH_URL_TOOL: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "The URL to fetch"},
+            },
+            "required": ["url"],
+        },
+    },
+}
+
+_FETCH_DOCUMENT_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "fetch_document",
+        "description": (
+            "Fetch a research document or paper. Detects PDFs, downloads them, and parses page text when possible. "
+            "Use this for papers, filings, policy PDFs, annual reports, and long-form documents."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The document URL to fetch"},
             },
             "required": ["url"],
         },
@@ -113,7 +131,7 @@ class QualBuilderAgent:
     def call_openai(self, user_message: str, max_searches: int = 8) -> str:
         """Run OpenAI with web search + full-article fetch tool use loop."""
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
-        tools = [_SEARCH_TOOL, _FETCH_URL_TOOL] if self.use_search else []
+        tools = [_SEARCH_TOOL, _FETCH_URL_TOOL, _FETCH_DOCUMENT_TOOL] if self.use_search else []
         search_count = 0
         fetch_count = 0
         max_fetches = max_searches  # allow as many fetches as searches
@@ -174,6 +192,15 @@ class QualBuilderAgent:
                             url = args.get("url", "")
                             logger.info(f"[qual] Fetching full article ({fetch_count + 1}): {url}")
                             result = fetch_url(url)
+                            fetch_count += 1
+                    elif tc.function.name == "fetch_document":
+                        if fetch_count >= max_fetches:
+                            result = "Fetch limit reached. Synthesize what you have."
+                        else:
+                            args = json.loads(tc.function.arguments)
+                            url = args.get("url", "")
+                            logger.info(f"[qual] Fetching document ({fetch_count + 1}): {url}")
+                            result = fetch_document(url)
                             fetch_count += 1
                     else:
                         result = f"Unknown tool: {tc.function.name}"
@@ -242,6 +269,7 @@ class QualBuilderAgent:
             "5. End your response with a `## Questions for Quant` section if you have data questions.\n"
             "   Format: 'Check [asset/metric] around [date/period] — I'm seeing [event] that should show up.'\n"
             "6. After your prose, append a machine-readable ```evidence_json block.\n"
+            "7. When search results point to PDFs, papers, filings, or policy reports, prefer `fetch_document` over plain `fetch_url`.\n"
             "\n## Discipline Rules — READ CAREFULLY\n"
             "- **Stay on brief.** Every section, finding, and claim must be directly relevant to the "
             "research brief above. Do not let tangential search results (e.g., unrelated geopolitical "

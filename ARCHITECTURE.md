@@ -105,3 +105,4 @@ The current verifier enforces:
 - `agentorg approval` and `agentorg approve` are the user-facing entrypoints for the publication boundary.
 - `source_registry.json` currently lives at the projects-root level so related projects can share source reputation without coupling it to this repo's local state.
 - Full-article fetching is available through `fetch_url`; plain search snippets are no longer the only browsing primitive.
+- PDF and paper ingestion are now available through `fetch_document`; this is the current path for research-document retrieval.

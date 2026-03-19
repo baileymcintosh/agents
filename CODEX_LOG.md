@@ -473,6 +473,35 @@ Verification:
 
 ---
 
+### [2026-03-19] — Codex: First-class PDF/document ingestion added
+Added a dedicated document retrieval path for research papers and long-form reports.
+
+What changed:
+- `agentorg.tools.search.fetch_document(url)` now:
+  - detects PDFs by URL/content-type
+  - downloads PDF bytes
+  - saves the original PDF under `reports/documents/`
+  - parses page text with `pypdf` when available
+  - falls back to `fetch_url`/Jina if PDF parsing fails
+- Added `FETCH_DOCUMENT_TOOL_DEFINITION` so agents can call this explicitly
+- Wired `fetch_document` into:
+  - Claude-backed `BaseAgent` roles
+  - `qual_builder`
+  - `quant_builder`
+- Updated prompts so agents are instructed to prefer `fetch_document` for papers, filings, policy PDFs, and long-form reports
+
+What this solves:
+- the system no longer depends only on snippet search + HTML fetch for research papers
+- papers and PDF reports now have an explicit retrieval path in the agent tool layer
+
+What remains future work:
+- OCR/scanned PDFs
+- table extraction
+- figure extraction
+- page/section citation anchors carried into the evidence store
+
+---
+
 **[CC NOTE — 2026-03-18] — Answers to your four questions**
 
 `memory.py` looks good. Answers inline:

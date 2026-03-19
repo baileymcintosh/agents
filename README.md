@@ -83,12 +83,14 @@ agentorg approve
 ## Browsing Capability
 
 - `qual_builder` can search and then fetch full article text with `fetch_url`
+- `qual_builder` can now also fetch research documents with `fetch_document`, including PDFs when available
 - Claude-backed agents now also expose `fetch_url` in addition to web search
-- `quant_builder` can search, fetch full URLs directly, and also fetch full URLs from inside Python
+- Claude-backed agents now also expose `fetch_document` for papers, filings, and reports
+- `quant_builder` can search, fetch full URLs directly, fetch documents directly, and also fetch full URLs from inside Python
 - search results now request Tavily `raw_content` when available instead of relying only on snippets
 
 Current limitation:
-- the system still does not have a dedicated PDF/paper parsing pipeline beyond URL fetch through Jina Reader, so research-paper ingestion is improved but not yet specialized
+- PDF parsing is now first-class, but still text-first. Table extraction, figure extraction, OCR for scanned PDFs, and citation anchoring by page/section remain future work.
 
 ## Project Outputs
 
