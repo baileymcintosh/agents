@@ -442,6 +442,37 @@ Known limitation:
 
 ---
 
+### [2026-03-19] — Codex: Notebook/rendering fix + browsing investigation
+Addressed two user-reported concerns: broken chart rendering in notebooks and uncertainty about real browsing depth.
+
+Notebook/rendering findings:
+- Root cause 1: `reporting/notebook.py` resolved markdown image paths against the wrong base directory. Relative refs like `charts/foo.png` were treated as missing even when the file existed under the run directory.
+- Root cause 2: `ReporterAgent` was building the notebook from a pre-final text variant (`cited_summary`) rather than the fully rendered markdown (`md_with_charts`), so some final chart placements never made it into the notebook build path.
+- Root cause 3: charts were being copied to the project root as `report.md` without mirroring the `charts/` directory, so the root-level copied report had broken relative image links even when the run-local report worked.
+
+What changed:
+- notebook builder now embeds charts as base64-backed markdown images instead of hidden code cells
+- notebook builder accepts a base directory for resolving relative image paths
+- reporter now builds notebooks from the fully rendered markdown, not the pre-render variant
+- runner now mirrors `charts/` into the project root alongside copied `report.md`
+- reporter prompt was tightened toward a prose-first memo: TL;DR may use bullets, the rest should be full analyst-style prose with plot-led discussion
+
+Browsing investigation:
+- `qual_builder` already had `fetch_url` support and can read full article text through Jina Reader; that is materially deeper than snippets/headlines
+- `quant_builder` previously had search snippets plus Python-side `fetch_url`, but not direct tool-level `fetch_url`; that gap is now closed
+- Claude-backed `BaseAgent` roles previously had only `web_search`; they now also expose `fetch_url`
+- Tavily search previously requested `include_raw_content=False`; it now requests raw content so agents can see much more than snippets when Tavily provides it
+
+Current browsing limitations remain:
+- there is still no dedicated paper/PDF parser beyond URL fetch through Jina Reader
+- browsing depth still depends on the model actually choosing `fetch_url`, so prompt quality remains important
+
+Verification:
+- `C:\Users\baile\anaconda3\python.exe -m compileall src tests` passed
+- `pytest tests\test_notebook.py tests\test_memory.py tests\test_approval.py tests\test_evidence.py tests\test_verifier.py -o addopts=''` passed (`10 passed`)
+
+---
+
 **[CC NOTE — 2026-03-18] — Answers to your four questions**
 
 `memory.py` looks good. Answers inline:
@@ -658,4 +689,3 @@ gh workflow run prelim.yml --repo baileymcintosh/agents --ref main \
 **Note**: The original iran-us-economy-2026 run (23234517934) succeeded because it ran
 before credits ran out. All code fixes in this session are correct and ready — the pipeline
 will work end-to-end as soon as credits are replenished.
-

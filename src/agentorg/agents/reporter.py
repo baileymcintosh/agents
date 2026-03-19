@@ -209,7 +209,12 @@ class ReporterAgent(BaseAgent):
                 "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "model": self.model,
             }
-            nb = build_notebook(summary, chart_paths, metadata=meta)
+            nb = build_notebook(
+                summary,
+                chart_paths,
+                metadata=meta,
+                base_dir=report_path.parent,
+            )
             if nb is None:
                 return None
             nb_path = report_path.with_suffix(".ipynb")
@@ -418,19 +423,23 @@ class ReporterAgent(BaseAgent):
             "and the qual explained them, make that cross-verification explicit — it's the most valuable part.\n\n"
             "Use these exact section headings:\n"
             "# [Project Title]\n"
-            "## One-Line Status\n"
+            "## TL;DR\n"
+            "## Executive Summary\n"
             "## Situation Overview\n"
-            "## Key Findings\n"
+            "## Core Analysis\n"
             "## Scenario Outlook\n"
             "## Financial Markets Implications\n"
             "## Historical Precedents & Lessons\n"
-            "## Quality Assessment\n"
+            "## Risks, Counterarguments, and What Would Change the View\n"
             "## Recommended Next Steps\n"
             "## Data & Charts\n\n"
             "Rules:\n"
+            "- `## TL;DR` may use bullets. Every other section should be mostly full prose paragraphs.\n"
             "- Cite specific data points from the quant research (exact prices, % changes, dates)\n"
             "- Cite named sources from the qual research (publications, officials, think tanks)\n"
-            "- In the narrative sections, reference charts by name: 'As shown in the oil price chart below...'\n"
+            "- Let the plots lead the discussion: reference charts repeatedly in the body and explain what each plot changes about the thesis.\n"
+            "- When a chart materially supports a body section, place the relevant `[CHART: filename]` inline near that discussion, not only in `## Data & Charts`.\n"
+            "- Do not write generic filler between sections; each paragraph should advance the argument.\n"
             "- In `## Data & Charts`, write a detailed analytical paragraph for EVERY chart (see chart catalogue)\n"
             "- Include the cross-agent dialogue insights: moments where quant spotted something and qual explained it\n"
             "- Prefer claims marked `verified` when the evidence digest distinguishes them\n"
@@ -558,7 +567,7 @@ class ReporterAgent(BaseAgent):
         report_path = self.write_report("Executive Summary", md_with_charts)
 
         # Build Jupyter notebook — primary output, open in VS Code
-        nb_path = self._build_notebook(cited_summary, chart_paths, report_path) if not dry_run else None
+        nb_path = self._build_notebook(md_with_charts, chart_paths, report_path) if not dry_run else None
 
         # Build all-plots notebook — every quant chart in one place, no text
         all_plots_path = self._build_all_plots_notebook(all_pngs) if not dry_run and all_pngs else None

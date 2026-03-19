@@ -43,6 +43,7 @@ flowchart TD
 - The session persists sources, claims, and agenda items under `reports/_state/`, and agenda items now carry rough difficulty tags.
 - `verifier` checks claim provenance and quantitative artifact coverage.
 - `reporter` only synthesizes after verifier verdict `PASS`, injects inline source tags where possible, and appends a references section from `sources.json`.
+- notebook export embeds charts directly into markdown cells so rendered notebooks do not depend on external chart-file paths.
 - `qa_editor` reviews the finished report against the brief, verified claims, charts, and unresolved agenda items; if needed it requests one bounded reporter rewrite.
 - `publication approval` persists the publication-boundary state and gives the operator a final inspect/approve step before the push boundary.
 - At run end, the system writes `project_memory.json` and updates the shared `source_registry.json`.
@@ -103,3 +104,4 @@ The current verifier enforces:
 - These root docs are the primary user-facing architecture references and should be updated whenever the execution path changes.
 - `agentorg approval` and `agentorg approve` are the user-facing entrypoints for the publication boundary.
 - `source_registry.json` currently lives at the projects-root level so related projects can share source reputation without coupling it to this repo's local state.
+- Full-article fetching is available through `fetch_url`; plain search snippets are no longer the only browsing primitive.

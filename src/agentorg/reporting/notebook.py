@@ -40,28 +40,26 @@ _CHART_TRIGGERS = {
 }
 
 
-def _png_output(png_path: Path) -> Any:
-    """Build an nbformat display_data output with embedded PNG."""
+def _image_markdown_cell(png_path: Path, caption: str = "") -> Any:
+    """A markdown cell with an embedded base64 PNG so no code input is shown."""
     data = base64.b64encode(png_path.read_bytes()).decode("utf-8")
-    return nbformat.v4.new_output(
-        output_type="display_data",
-        data={"image/png": data, "text/plain": ["<Figure>"]},
-        metadata={"image/png": {"width": 900}},
+    label = caption or png_path.stem.replace("_", " ").title()
+    html = (
+        f'<figure style="margin: 1.5rem 0;">'
+        f'<img alt="{label}" src="data:image/png;base64,{data}" '
+        f'style="max-width: 100%; height: auto;" />'
+        f'<figcaption style="margin-top: 0.5rem; color: #555; font-style: italic;">'
+        f"{label}</figcaption></figure>"
     )
-
-
-def _hidden_chart_cell(png_path: Path, caption: str = "") -> dict[str, Any]:
-    """A code cell with hidden source that displays a chart."""
-    cell = nbformat.v4.new_code_cell(source=f"# {caption}")
-    cell["metadata"]["jupyter"] = {"source_hidden": True}
-    cell["metadata"]["collapsed"] = True
-    cell["outputs"] = [_png_output(png_path)]
-    cell["execution_count"] = None
-    return cell
+    return nbformat.v4.new_markdown_cell(html)
 
 
 def _emit_markdown_with_embedded_images(
-    text: str, cells: list, used_chart_keys: set[str]
+    text: str,
+    cells: list,
+    used_chart_keys: set[str],
+    chart_paths: dict[str, Path],
+    base_dir: Path,
 ) -> None:
     """
     Scan markdown text for ![alt](path.png) references. For each:
@@ -77,6 +75,8 @@ def _emit_markdown_with_embedded_images(
         alt = match.group(1) or "Chart"
         path_str = match.group(2)
         png_path = Path(path_str)
+        if not png_path.is_absolute():
+            png_path = (base_dir / png_path).resolve()
 
         # Emit text before this image
         before = text[last_end:match.start()].strip()
@@ -86,7 +86,11 @@ def _emit_markdown_with_embedded_images(
         # Embed the chart if the file exists; otherwise emit a placeholder
         if png_path.exists():
             label = alt or png_path.stem.replace("_", " ").title()
-            cells.append(_hidden_chart_cell(png_path, label))
+            cells.append(_image_markdown_cell(png_path, label))
+            resolved = png_path.resolve()
+            for key, candidate in chart_paths.items():
+                if candidate.resolve() == resolved:
+                    used_chart_keys.add(key)
             logger.debug(f"[notebook] Embedded chart: {png_path.name}")
         else:
             # File not found (e.g. absolute path from a different machine) — skip image
@@ -137,6 +141,7 @@ def build_notebook(
     summary_text: str,
     chart_paths: dict[str, Path],
     metadata: dict[str, str] | None = None,
+    base_dir: Path | None = None,
 ) -> "nbformat.NotebookNode | None":
     """
     Build a Jupyter notebook from the executive summary and generated charts.
@@ -162,6 +167,7 @@ def build_notebook(
 
     cells = []
     used_charts: set[str] = set()
+    notebook_base_dir = base_dir or Path.cwd()
 
     # ── Title cell ─────────────────────────────────────────────────────────────
     meta = metadata or {}
@@ -176,7 +182,7 @@ def build_notebook(
 
     # ── Timeline at top if available — anchors the narrative ──────────────────
     if "timeline" in chart_paths and "timeline" not in used_charts:
-        cells.append(_hidden_chart_cell(chart_paths["timeline"], "Event Timeline"))
+        cells.append(_image_markdown_cell(chart_paths["timeline"], "Event Timeline"))
         used_charts.add("timeline")
 
     # ── Body sections ──────────────────────────────────────────────────────────
@@ -189,14 +195,20 @@ def build_notebook(
             continue
 
         # Split markdown on embedded image references; emit text + chart cells
-        _emit_markdown_with_embedded_images(md_raw, cells, used_charts)
+        _emit_markdown_with_embedded_images(
+            md_raw,
+            cells,
+            used_charts,
+            chart_paths,
+            notebook_base_dir,
+        )
 
         # Insert reporter summary chart after section if relevant and not yet used
         chart_path = _chart_for_section(heading, chart_paths)
         if chart_path:
             for key, path in chart_paths.items():
                 if path == chart_path and key not in used_charts:
-                    cells.append(_hidden_chart_cell(chart_path, heading.lstrip("#").strip()))
+                    cells.append(_image_markdown_cell(chart_path, heading.lstrip("#").strip()))
                     used_charts.add(key)
                     break
 
@@ -205,7 +217,7 @@ def build_notebook(
         if key not in used_charts:
             label = key.replace("_", " ").title()
             cells.append(nbformat.v4.new_markdown_cell(f"---\n\n## {label}"))
-            cells.append(_hidden_chart_cell(path, label))
+            cells.append(_image_markdown_cell(path, label))
 
     nb.cells = cells
     logger.info(f"[notebook] Built notebook: {len(cells)} cells, {len(chart_paths)} charts")

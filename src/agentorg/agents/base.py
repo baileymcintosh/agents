@@ -18,7 +18,13 @@ except ImportError:  # pragma: no cover - minimal test environment fallback
 
 from agentorg import config
 from agentorg.timing import RunClock
-from agentorg.tools.search import SEARCH_TOOL_DEFINITION, web_search, format_search_results
+from agentorg.tools.search import (
+    FETCH_URL_TOOL_DEFINITION,
+    SEARCH_TOOL_DEFINITION,
+    fetch_url,
+    format_search_results,
+    web_search,
+)
 
 try:
     import anthropic
@@ -130,7 +136,7 @@ class BaseAgent(ABC):
         else:
             effective_max_tokens = self.max_tokens
 
-        tools = [SEARCH_TOOL_DEFINITION] if self.use_search else []
+        tools = [SEARCH_TOOL_DEFINITION, FETCH_URL_TOOL_DEFINITION] if self.use_search else []
         # Search cap: clock-driven if budget set, else 2 in fast mode, else unlimited
         if self.clock:
             max_searches = self.clock.max_searches()
@@ -205,6 +211,10 @@ class BaseAgent(ABC):
                                 results = web_search(query, max_results=n_results)
                                 result_text = format_search_results(results)
                                 search_count += 1
+                        elif tool_name == "fetch_url":
+                            url = tool_input.get("url", "")
+                            logger.info(f"[{self.role}] Fetching full URL: {url}")
+                            result_text = fetch_url(url)
                         else:
                             result_text = f"Unknown tool: {tool_name}"
 

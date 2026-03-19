@@ -26,7 +26,13 @@ from agentorg import config
 from agentorg.evidence import extract_json_block
 from agentorg.messaging import AgentMessenger
 from agentorg.tools.python_exec import PYTHON_EXEC_TOOL_DEFINITION, PythonExecutor
-from agentorg.tools.search import SEARCH_TOOL_DEFINITION, web_search, format_search_results
+from agentorg.tools.search import (
+    FETCH_URL_TOOL_DEFINITION,
+    SEARCH_TOOL_DEFINITION,
+    fetch_url,
+    format_search_results,
+    web_search,
+)
 
 try:
     import anthropic
@@ -71,9 +77,11 @@ class QuantBuilderAgent:
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
         tools = [PYTHON_EXEC_TOOL_DEFINITION]
         if self.use_search:
-            tools.append(SEARCH_TOOL_DEFINITION)
+            tools.extend([SEARCH_TOOL_DEFINITION, FETCH_URL_TOOL_DEFINITION])
 
         search_count = 0
+        fetch_count = 0
+        max_fetches = max_searches
         all_charts: list[str] = []
 
         logger.info(f"[quant] → Claude ({self.model}) with Python exec + web search")
@@ -130,6 +138,14 @@ class QuantBuilderAgent:
                             results = web_search(query, max_results=5)
                             result_text = format_search_results(results)
                             search_count += 1
+                    elif block.name == "fetch_url":
+                        if fetch_count >= max_fetches:
+                            result_text = "Fetch limit reached."
+                        else:
+                            url = block.input.get("url", "")
+                            logger.info(f"[quant] Fetching full article ({fetch_count + 1}/{max_fetches}): {url}")
+                            result_text = fetch_url(url)
+                            fetch_count += 1
                     else:
                         result_text = f"Unknown tool: {block.name}"
 
@@ -205,6 +221,8 @@ class QuantBuilderAgent:
             "   in the data that needs a narrative explanation.\n"
             "   Format: 'I see [metric] moved [X%] on [date]. What happened?'\n"
             "7. After your prose, append a machine-readable ```evidence_json block.\n"
+            "8. When search results point to relevant full articles, papers, or Substack posts, call `fetch_url` "
+            "   on the most important URLs instead of relying only on snippets.\n"
         )
 
         if agenda_items:

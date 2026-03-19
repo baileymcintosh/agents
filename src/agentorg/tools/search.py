@@ -87,7 +87,7 @@ def web_search(query: str, max_results: int = 8, search_depth: str = "advanced")
                     "max_results": max_results,
                     "search_depth": search_depth,
                     "include_answer": True,
-                    "include_raw_content": False,
+                    "include_raw_content": True,
                 },
                 timeout=30.0,
             )
@@ -160,7 +160,10 @@ def format_search_results(results: list[dict[str, Any]]) -> str:
     for i, r in enumerate(results, 1):
         lines.append(f"**[{i}] {r.get('title', 'No title')}**")
         lines.append(f"Source: {r.get('url', 'Unknown')}")
-        lines.append(r.get('content', '').strip())
+        body = (r.get("raw_content") or r.get("content") or "").strip()
+        if len(body) > 3000:
+            body = body[:3000] + "\n[... truncated raw content ...]"
+        lines.append(body)
         lines.append("")
 
     return "\n".join(lines)
@@ -189,5 +192,23 @@ SEARCH_TOOL_DEFINITION: dict[str, Any] = {
             },
         },
         "required": ["query"],
+    },
+}
+
+FETCH_URL_TOOL_DEFINITION: dict[str, Any] = {
+    "name": "fetch_url",
+    "description": (
+        "Fetch the full text content of a URL as clean markdown via Jina Reader. "
+        "Use this after search to read full articles, Substack posts, papers, reports, and official documents."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "A fully-qualified http(s) URL to fetch.",
+            },
+        },
+        "required": ["url"],
     },
 }

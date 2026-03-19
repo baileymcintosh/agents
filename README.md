@@ -16,6 +16,7 @@ The system is designed to run with minimal human involvement after the initial b
    Related prior projects can seed carry-forward questions into the agenda, and agenda items now carry rough `simple|complex|synthesis` difficulty tags.
 5. **Verification gate**: structured claims are checked against source records and data artifacts.
 6. **Reporting**: the reporter synthesizes only after verification passes, adds inline source tags from the evidence store, and appends a references table.
+   The report is now prompted as a prose-first research memo: only the opening TL;DR may use bullets, while the rest should read as full narrative analysis led by chart discussion.
 7. **Editorial QA**: a `qa_editor` checks the finished report against the brief, verified claims, charts, and unresolved agenda items, then allows one bounded reporter revision pass.
 8. **Publication approval**: a persisted approval artifact records the final publish-ready state; `agentorg approval` inspects it and `agentorg approve` marks it approved.
 9. **Cross-session memory**: each completed project writes `project_memory.json`, and a shared `source_registry.json` tracks which sources have historically supported verified or flagged claims.
@@ -58,6 +59,8 @@ Research artifacts are persisted under `reports/_state/`:
 
 This sits alongside `charts_manifest.json`, which remains the handoff between quant chart generation and reporting. The evidence store is now also read during the session: each builder receives a compact brief of the other builder's top claims and sources before each turn.
 
+Notebook output now embeds charts directly as base64-backed markdown images so the notebook does not depend on external image paths at view time.
+
 Project-level memory artifacts are also persisted outside `reports/`:
 
 - `project_memory.json`: verified findings, useful sources, and unresolved high-priority questions from the completed run
@@ -76,6 +79,16 @@ agentorg approve
 ```
 
 `prelim` and `iterate` now run the canonical collaborative pipeline through `runner.py`.
+
+## Browsing Capability
+
+- `qual_builder` can search and then fetch full article text with `fetch_url`
+- Claude-backed agents now also expose `fetch_url` in addition to web search
+- `quant_builder` can search, fetch full URLs directly, and also fetch full URLs from inside Python
+- search results now request Tavily `raw_content` when available instead of relying only on snippets
+
+Current limitation:
+- the system still does not have a dedicated PDF/paper parsing pipeline beyond URL fetch through Jina Reader, so research-paper ingestion is improved but not yet specialized
 
 ## Project Outputs
 

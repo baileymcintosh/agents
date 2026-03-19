@@ -351,6 +351,13 @@ def _organise_run_outputs(reports_dir: Path, project_dir: Path, reporter_result:
             png.rename(dest)
             logger.info(f"[runner] Chart → charts/{png.name}")
 
+    project_charts_dir = project_dir / "charts"
+    project_charts_dir.mkdir(exist_ok=True)
+    for png in charts_dir.glob("*.png"):
+        dest = project_charts_dir / png.name
+        if not dest.exists():
+            shutil.copy2(png, dest)
+
     # Copy the executive summary to project root as report.md for easy access
     if reporter_result:
         report_src = reporter_result.get("report", "")
