@@ -32,13 +32,6 @@ except ImportError:
     logger.warning("[notebook] nbformat not installed — notebook export disabled")
 
 
-# Keywords that trigger chart insertion after a section
-_CHART_TRIGGERS = {
-    "scenarios": ["scenario", "outlook", "probability", "probabilities"],
-    "market_impacts": ["market", "financial", "asset", "oil", "equit", "energy"],
-    "timeline": ["timeline", "chronol", "history", "sequence", "events"],
-}
-
 
 def _image_markdown_cell(png_path: Path, caption: str = "") -> Any:
     """A markdown cell with an embedded base64 PNG so no code input is shown."""
@@ -128,14 +121,6 @@ def _split_into_sections(text: str) -> list[tuple[str, str]]:
     return sections
 
 
-def _chart_for_section(heading: str, chart_paths: dict[str, Path]) -> Path | None:
-    """Return the most relevant chart for a given section heading, if any."""
-    heading_lower = heading.lower()
-    for chart_key, keywords in _CHART_TRIGGERS.items():
-        if chart_key in chart_paths and any(kw in heading_lower for kw in keywords):
-            return chart_paths[chart_key]
-    return None
-
 
 def build_notebook(
     summary_text: str,
@@ -180,11 +165,6 @@ def build_notebook(
     )
     cells.append(nbformat.v4.new_markdown_cell(title_md))
 
-    # ── Timeline at top if available — anchors the narrative ──────────────────
-    if "timeline" in chart_paths and "timeline" not in used_charts:
-        cells.append(_image_markdown_cell(chart_paths["timeline"], "Event Timeline"))
-        used_charts.add("timeline")
-
     # ── Body sections ──────────────────────────────────────────────────────────
     sections = _split_into_sections(summary_text)
 
@@ -202,15 +182,6 @@ def build_notebook(
             chart_paths,
             notebook_base_dir,
         )
-
-        # Insert reporter summary chart after section if relevant and not yet used
-        chart_path = _chart_for_section(heading, chart_paths)
-        if chart_path:
-            for key, path in chart_paths.items():
-                if path == chart_path and key not in used_charts:
-                    cells.append(_image_markdown_cell(chart_path, heading.lstrip("#").strip()))
-                    used_charts.add(key)
-                    break
 
     # ── Append any reporter charts not yet placed ──────────────────────────────
     for key, path in chart_paths.items():

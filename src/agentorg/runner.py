@@ -355,6 +355,10 @@ def _download_sources(project_dir: Path, store: Any) -> None:
 
     sources = store.sources()
     if not sources:
+        (sources_dir / "README.md").write_text(
+            "# Sources\n\nNo sources were recorded by the agents in this run.\n",
+            encoding="utf-8",
+        )
         return
 
     # Sort by tier (best first), skip dataset sources, cap at 8
@@ -364,6 +368,14 @@ def _download_sources(project_dir: Path, store: Any) -> None:
         [s for s in sources if s.source_type != "dataset" and s.url],
         key=lambda s: tier_order.get(s.tier, 5),
     )[:8]
+
+    if not ranked:
+        # All sources are dataset-type (yfinance/FRED) — write a brief manifest
+        lines = ["# Sources\n", "All sources in this run are live datasets (yfinance/FRED/EIA) — no web articles to archive.\n\n"]
+        for s in sources[:20]:
+            lines.append(f"- [{s.tier}] {s.title} — {s.publisher or s.url or 'no URL'}\n")
+        (sources_dir / "README.md").write_text("".join(lines), encoding="utf-8")
+        return
 
     for i, source in enumerate(ranked, 1):
         slug = re.sub(r"[^a-z0-9]+", "_", source.title.lower())[:50].strip("_")

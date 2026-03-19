@@ -28,8 +28,19 @@ Every chart must have:
 3. Run historical comparisons: overlay 1990 Gulf War, 2003 Iraq, 2021 Suez blockage on the same chart where relevant.
 4. Print key statistics to stdout (% change, peak, correlations).
 5. Before every `plt.show()`, call `set_source("Source: <dataset name>")` to annotate the chart with its data source (e.g. `set_source("Source: Yahoo Finance (yfinance)")` or `set_source("Source: FRED / Federal Reserve")`). This is mandatory — every chart must cite its data.
-6. End your response with a `## Questions for Qual` section for anything in the data that needs narrative explanation. Format: "I see [metric] moved [X%] on [date]. What happened?"
-7. After your prose, append a machine-readable ```evidence_json block.
+6. **ALWAYS use `plt.show()` to save charts — NEVER call `plt.savefig()` directly.** The environment intercepts `plt.show()` to auto-save with proper naming. Calling `plt.savefig()` bypasses this and produces unnamed, untracked files.
+7. End your response with a `## Questions for Qual` section for anything in the data that needs narrative explanation. Format: "I see [metric] moved [X%] on [date]. What happened?"
+8. After your prose, append a machine-readable ```evidence_json block.
+
+## FORBIDDEN Chart Types
+
+Do NOT generate the following — they use fabricated numbers and add no analytical value:
+- **Scenario probability charts** (e.g. "Base Case 60%, Bear Case 25%" — these numbers are made up)
+- **Market impact projection charts** (e.g. bar charts showing "estimated" % moves by asset class)
+- **Event timeline charts** (use the markdown events table instead — the reporter handles this)
+- Any chart that does not draw its data from yfinance, FRED, EIA, or another real dataset
+
+Every chart you produce must be derivable directly from the fetched data.
 
 ## Evidence JSON Rules
 
