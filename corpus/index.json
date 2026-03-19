@@ -1,0 +1,152 @@
+{
+  "articles": [
+    {
+      "firm": "kkr",
+      "firm_name": "KKR",
+      "title": "Unlocking Potential: Private Junior Debt Opportunities in 2023 | KKR",
+      "url": "https://www.kkr.com/insights/freeze-in-private-junior-debt-not-so-fast",
+      "dir": "kkr\\2026-03_unlocking_potential_private_junior_debt_opportunities_i_f34b02e2",
+      "downloaded": "2026-03-19",
+      "chars": 16813,
+      "images": [
+        "img_01.jpeg"
+      ]
+    },
+    {
+      "firm": "kkr",
+      "firm_name": "KKR",
+      "title": "Insights on Europe's Future and Long-Term Investment Opportunities | KKR",
+      "url": "https://www.kkr.com/insights/why-europe-will-emerge-stronger-current-crisis",
+      "dir": "kkr\\2026-03_insights_on_europe_s_future_and_long_term_investment_op_793bf6fa",
+      "downloaded": "2026-03-19",
+      "chars": 20111,
+      "images": [
+        "img_01.jpeg"
+      ]
+    },
+    {
+      "firm": "kkr",
+      "firm_name": "KKR",
+      "title": "European Tech CEOs Conversation: Insights by KKR and Boardwave | KKR",
+      "url": "https://www.kkr.com/insights/kkr-and-boardwave-host-european-tech-ceos-conversation",
+      "dir": "kkr\\2026-03_european_tech_ceos_conversation_insights_by_kkr_and_boa_a518cbf4",
+      "downloaded": "2026-03-19",
+      "chars": 17140,
+      "images": []
+    },
+    {
+      "firm": "kkr",
+      "firm_name": "KKR",
+      "title": "Privy: Accelerating Indonesia’s Digital Transformation | KKR",
+      "url": "https://www.kkr.com/insights/privy-accelerating-indonesias-digital-transformation",
+      "dir": "kkr\\2026-03_privy_accelerating_indonesia_s_digital_transformation_k_ee573a64",
+      "downloaded": "2026-03-19",
+      "chars": 19634,
+      "images": [
+        "img_01.jpg"
+      ]
+    },
+    {
+      "firm": "kkr",
+      "firm_name": "KKR",
+      "title": "Optimizing Returns Across Changing Macroeconomic Environments | KKR",
+      "url": "https://www.kkr.com/insights/regime-change-role-private-equity-traditional-portfolio",
+      "dir": "kkr\\2026-03_optimizing_returns_across_changing_macroeconomic_enviro_b9a619a6",
+      "downloaded": "2026-03-19",
+      "chars": 26600,
+      "images": [
+        "img_01.jpg"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Overheard @ Apollo: The Private Capital vs. Bank ModelApollo Global Management",
+      "url": "https://www.apollo.com/insights-news/insights/overheard-at-apollo/2023/03/overheard-at-apollo-the-private-capital-vs-bank-model",
+      "dir": "apollo\\2026-03_overheard_apollo_the_private_capital_vs_bank_modelapoll_2f849f39",
+      "downloaded": "2026-03-19",
+      "chars": 21085,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.png",
+        "img_07.jpg"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Overheard @ Apollo: The Media & Entertainment IndustryApollo Global Management",
+      "url": "https://www.apollo.com/insights-news/insights/overheard-at-apollo/2023/03/overheard-at-apollo-the-media-and-entertainment-industry",
+      "dir": "apollo\\2026-03_overheard_apollo_the_media_entertainment_industryapollo_939ee1ef",
+      "downloaded": "2026-03-19",
+      "chars": 21183,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.png",
+        "img_07.jpg"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Overheard @ Apollo: On the March CPI ReportApollo Global Management",
+      "url": "https://www.apollo.com/insights-news/insights/overheard-at-apollo/2023/04/overheard-at-apollo-on-the-march-cpi-report",
+      "dir": "apollo\\2026-03_overheard_apollo_on_the_march_cpi_reportapollo_global_m_033b36a0",
+      "downloaded": "2026-03-19",
+      "chars": 21006,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.png"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Overheard @ Apollo: Torsten Slok on Barbie, the FOMC Meeting and Japanese Yield Curve ControlApollo Global Management",
+      "url": "https://www.apollo.com/insights-news/insights/overheard-at-apollo/2023/08/overheard-apollo-torsten-slok-on-barbie-the-fomc-meeting-and-japanese-yield-curve-control",
+      "dir": "apollo\\2026-03_overheard_apollo_torsten_slok_on_barbie_the_fomc_meetin_bf6c3962",
+      "downloaded": "2026-03-19",
+      "chars": 22072,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.png",
+        "img_07.jpg"
+      ]
+    },
+    {
+      "firm": "apollo",
+      "firm_name": "Apollo Global Management",
+      "title": "Overheard @ Apollo - Mike DowningApollo Global Management",
+      "url": "https://www.apollo.com/insights-news/insights/overheard-at-apollo/2023/07/overheard-at-apollo-mike-downing",
+      "dir": "apollo\\2026-03_overheard_apollo_mike_downingapollo_global_management_4925cac4",
+      "downloaded": "2026-03-19",
+      "chars": 20625,
+      "images": [
+        "img_01.png",
+        "img_02.png",
+        "img_03.png",
+        "img_04.png",
+        "img_05.png",
+        "img_06.png",
+        "img_07.jpg"
+      ]
+    }
+  ],
+  "last_updated": "2026-03-19T17:59:22.004644"
+}
