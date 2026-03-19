@@ -95,7 +95,7 @@ _PREAMBLE = textwrap.dedent("""\
     _chart_source = ['']  # set via set_source() before plt.show()
 
     def set_source(text):
-        """Call before plt.show() to annotate the chart with its data source."""
+        # Call before plt.show() to annotate the chart with its data source.
         _chart_source[0] = text
 
     _orig_show = plt.show
