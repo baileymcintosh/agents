@@ -153,6 +153,7 @@ JINA_BASE = "https://r.jina.ai/"
 REQUEST_DELAY = 1.5
 TIMEOUT = 30.0
 MIN_IMAGE_BYTES = 20_000
+JINA_RETRIES = 5
 
 # Keywords that mark the start of boilerplate to strip at the end of articles
 _FOOTER_MARKERS = [
@@ -200,19 +201,36 @@ DEFAULT_REVIEW_MODEL = os.getenv("CORPUS_REVIEW_MODEL", "gpt-4o-mini")
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
 
-def _get(url: str, **kwargs) -> httpx.Response | None:
-    try:
-        r = httpx.get(url, timeout=TIMEOUT, follow_redirects=True, **kwargs)
-        r.raise_for_status()
-        return r
-    except Exception as e:
-        print(f"  [warn] GET {url[:80]}: {e}", file=sys.stderr)
-        return None
+def _get(url: str, retries: int = 1, retry_delay: float = 1.0, **kwargs) -> httpx.Response | None:
+    for attempt in range(retries):
+        try:
+            r = httpx.get(url, timeout=TIMEOUT, follow_redirects=True, **kwargs)
+            if r.status_code == 429 and attempt < retries - 1:
+                delay = retry_delay * (2 ** attempt)
+                print(f"  [warn] 429 for {url[:80]} - retrying in {delay:.1f}s", file=sys.stderr)
+                time.sleep(delay)
+                continue
+            r.raise_for_status()
+            return r
+        except Exception as e:
+            if attempt < retries - 1:
+                delay = retry_delay * (2 ** attempt)
+                print(f"  [warn] GET retry {attempt + 1}/{retries} {url[:80]}: {e}", file=sys.stderr)
+                time.sleep(delay)
+                continue
+            print(f"  [warn] GET {url[:80]}: {e}", file=sys.stderr)
+            return None
+    return None
 
 
 def _fetch_via_jina(url: str, max_chars: int = 50000) -> str:
     jina_url = f"{JINA_BASE}{url}"
-    r = _get(jina_url, headers={"Accept": "text/plain", "X-Return-Format": "markdown"})
+    r = _get(
+        jina_url,
+        retries=JINA_RETRIES,
+        retry_delay=2.0,
+        headers={"Accept": "text/plain", "X-Return-Format": "markdown"},
+    )
     if not r:
         return ""
     content = r.text.strip()
@@ -471,7 +489,7 @@ class CorpusReviewAgent:
         content = response.choices[0].message.content or "{}"
         return json.loads(content)
 
-    def review_link(self, firm_key: str, firm_cfg: dict, title: str, url: str, preview: str) -> LinkReview:
+    def review_link(self, firm_key: str, firm_cfg: dict, title: str, url: str, preview: str = "") -> LinkReview:
         system_prompt = (
             "You are screening candidate links from an investment firm's research/insights page. "
             "Your job is to decide whether the link is a substantive written research item worth archiving. "
@@ -486,7 +504,7 @@ class CorpusReviewAgent:
                 f"Firm: {firm_cfg['name']} ({firm_key})\n"
                 f"URL: {url}\n"
                 f"Candidate title: {title}\n"
-                "Preview text follows.\n\n"
+                "Preview text follows. It may be empty if preview fetch was skipped to avoid rate limits.\n\n"
                 f"{preview[:6000]}\n\n"
                 "Return JSON with keys: decision (include/reject), content_type, canonical_title, reason."
             ),
@@ -1190,11 +1208,7 @@ def ingest_firm(
             continue
 
         if reviewer:
-            preview = _fetch_via_jina(url, max_chars=6000)
-            if not preview:
-                print(f"  [skip] No preview available: {title[:60]}", file=sys.stderr)
-                continue
-            link_review = reviewer.review_link(firm_key, firm, title, url, preview)
+            link_review = reviewer.review_link(firm_key, firm, title, url, "")
             if not link_review.include:
                 print(f"  [skip] Agent rejected link as {link_review.content_type}: {title[:60]}")
                 continue
