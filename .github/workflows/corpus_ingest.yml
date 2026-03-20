@@ -1,0 +1,86 @@
+name: Corpus Ingest
+
+on:
+  workflow_dispatch:
+    inputs:
+      firm:
+        description: "Firm key to ingest (e.g. bridgewater)"
+        required: true
+        type: string
+      max_articles:
+        description: "Max candidate links to process"
+        required: false
+        default: "25"
+        type: string
+      refresh:
+        description: "Re-download already archived articles"
+        required: false
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+      agent_review:
+        description: "Require LLM approval for links and article bodies"
+        required: false
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+      review_model:
+        description: "Review model"
+        required: false
+        default: "gpt-4o-mini"
+        type: string
+
+env:
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+
+jobs:
+  ingest:
+    name: "Corpus: ${{ github.event.inputs.firm }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: astral-sh/setup-uv@v4
+
+      - run: uv python install 3.11
+      - run: uv sync
+
+      - name: Configure git
+        run: |
+          git config user.name "AgentOrg Bot"
+          git config user.email "agentorg-bot@users.noreply.github.com"
+
+      - name: Run corpus ingestion
+        env:
+          FIRM: ${{ github.event.inputs.firm }}
+          MAX_ARTICLES: ${{ github.event.inputs.max_articles }}
+          REFRESH: ${{ github.event.inputs.refresh }}
+          AGENT_REVIEW: ${{ github.event.inputs.agent_review }}
+          REVIEW_MODEL: ${{ github.event.inputs.review_model }}
+        run: |
+          FLAGS=""
+          if [ "$REFRESH" = "true" ]; then
+            FLAGS="$FLAGS --refresh"
+          fi
+          if [ "$AGENT_REVIEW" = "true" ]; then
+            FLAGS="$FLAGS --agent-review --review-model $REVIEW_MODEL"
+          fi
+          uv run python scripts/ingest_corpus.py --firm "$FIRM" --max "$MAX_ARTICLES" $FLAGS
+
+      - name: Commit corpus updates
+        run: |
+          git add corpus/
+          git diff --staged --quiet || git commit -m "corpus: ingest ${{ github.event.inputs.firm }} $(date -u +%Y-%m-%dT%H:%M)"
+          git push origin main
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Updated corpus for ${{ github.event.inputs.firm }}"
