@@ -159,6 +159,8 @@ _FOOTER_MARKERS = [
     "important information", "important notice", "important disclosures",
     "legal disclaimer", "disclaimer", "this material does not constitute",
     "this document is for informational purposes only",
+    "educational purposes only", "for illustrative purposes only",
+    "important disclosure information",
     "past performance is not", "not investment advice",
     "risk factors", "forward-looking statements",
     "footnotes\n", "endnotes\n",
@@ -168,7 +170,10 @@ _FOOTER_MARKERS = [
     "related insights", "related articles", "explore more",
     "recommended for you", "you may also like", "more from",
     "subscribe to", "sign up for",
-    "tags\n",
+    "tags\n", "tags",
+    "social",
+    "explore apollo", "more information", "governance",
+    "apollo in the media", "life at apollo",
     "copyright ©", "all rights reserved",
     "legal entities disseminating",
 ]
@@ -180,6 +185,16 @@ _NAV_SIGNALS = [
     "select your experience", "login\n",
     "careers\n", "contact us\n",
 ]
+
+_PROSE_EXCLUDE = [
+    "cookie", "privacy policy", "terms of use", "terms of service",
+    "all rights reserved", "personalize your experience",
+    "analytics tools", "we use cookies",
+    "by continuing", "please review our",
+    "manage preferences", "consent",
+]
+
+_MIN_SUBSTANTIVE_CHARS = 500
 
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
@@ -209,7 +224,10 @@ def _fetch_pdf_text(url: str) -> str:
         try:
             from pypdf import PdfReader
         except ImportError:
-            from PyPDF2 import PdfReader
+            try:
+                from PyPDF2 import PdfReader
+            except ImportError:
+                return _fetch_via_jina(url)
         r = _get(url)
         if not r:
             return ""
@@ -232,6 +250,164 @@ def _find_pdf_in_html(html: str, pattern: str, base_url: str) -> str | None:
     return None
 
 
+def _find_pdf_link(text: str, base_url: str) -> str | None:
+    match = re.search(r"(https?://[^\s\"'()<>]+\.pdf|/[^\s\"'()<>]+\.pdf)", text, re.IGNORECASE)
+    if not match:
+        return None
+    pdf_url = match.group(1)
+    if pdf_url.startswith("http"):
+        return pdf_url
+    return urljoin(base_url, pdf_url)
+
+
+def _contains_boilerplate_marker(text: str) -> bool:
+    lower = text.strip().lower()
+    return any(marker in lower for marker in _FOOTER_MARKERS) or any(
+        marker in lower for marker in _NAV_SIGNALS
+    )
+
+
+def _is_substantive_line(line: str) -> bool:
+    s = line.strip()
+    lower = s.lower()
+    if not s:
+        return False
+    if any(kw in lower for kw in _PROSE_EXCLUDE):
+        return False
+    if _contains_boilerplate_marker(s):
+        return False
+    if s.startswith("[!["):
+        return False
+    if s.startswith("!"):
+        return False
+    if "source:" in lower or lower.startswith("exhibit "):
+        return False
+    month_hits = len(re.findall(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b", lower))
+    digit_ratio = sum(ch.isdigit() for ch in s) / max(len(s), 1)
+    if month_hits >= 2 and digit_ratio > 0.01:
+        return False
+    if s.startswith(("[", "*", "-", "|")) and "](" in s:
+        return False
+    if s.count("](") >= 2:
+        return False
+    if re.fullmatch(r"#{1,6}", s):
+        return False
+    return True
+
+
+def _substantive_char_count(text: str) -> int:
+    total = 0
+    for line in text.splitlines():
+        if not _is_substantive_line(line):
+            continue
+        cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line).strip(" #>*`")
+        if cleaned:
+            total += len(cleaned)
+    return total
+
+
+def _cut_footer_lines(lines: list[str]) -> list[str]:
+    substantive_seen = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("# ") or _is_substantive_line(line):
+            substantive_seen = True
+        if _contains_boilerplate_marker(line):
+            if not substantive_seen:
+                continue
+            return lines[:i]
+    return lines
+
+
+def _drop_leading_boilerplate(lines: list[str]) -> list[str]:
+    first_h1_idx = next(
+        (i for i, line in enumerate(lines) if line.strip().startswith("# ")),
+        -1,
+    )
+    content_seen = False
+    for i, line in enumerate(lines[: min(len(lines), 20)]):
+        stripped = line.strip()
+        if stripped.startswith("# ") or _is_substantive_line(line):
+            content_seen = True
+        if _contains_boilerplate_marker(line):
+            if content_seen:
+                break
+            if first_h1_idx != -1 and first_h1_idx > i:
+                return lines[first_h1_idx:]
+            return lines[i + 1 :]
+    return lines
+
+
+def _finalize_content(content: str) -> str:
+    lines = _drop_leading_boilerplate(content.splitlines())
+    lines = _cut_footer_lines(lines)
+    cleaned_lines: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        lower = stripped.lower()
+        if lower == "share on":
+            continue
+        if stripped.startswith("*") and "share on " in lower:
+            continue
+        exhibit_match = re.match(r"(.{80,}?)(?:\s+Exhibit\s+\d+:.*)$", stripped)
+        if exhibit_match:
+            stripped = exhibit_match.group(1).strip()
+        source_match = re.match(r"(.{80,}?)(?:\s+Source:.*)$", stripped)
+        if source_match:
+            stripped = source_match.group(1).strip()
+        cleaned_lines.append(stripped if stripped else "")
+    while cleaned_lines and not cleaned_lines[-1].strip():
+        cleaned_lines.pop()
+    cleaned = "\n".join(cleaned_lines).strip()
+    return re.sub(r"\n{3,}", "\n\n", cleaned)
+
+
+def _has_minimum_substance(content: str) -> bool:
+    return _substantive_char_count(content) >= _MIN_SUBSTANTIVE_CHARS
+
+
+def _merge_wrapped_lines(text: str) -> str:
+    lines = text.splitlines()
+    nonblank = [line.strip() for line in lines if line.strip()]
+    if not nonblank:
+        return text
+    heading_count = sum(1 for line in nonblank if line.startswith("#"))
+    short_ratio = sum(1 for line in nonblank if len(line) < 90) / len(nonblank)
+    if heading_count > 3 or short_ratio < 0.6:
+        return text
+
+    merged: list[str] = []
+    buffer: list[str] = []
+
+    def flush() -> None:
+        if buffer:
+            merged.append(" ".join(buffer))
+            buffer.clear()
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            flush()
+            merged.append("")
+            continue
+        if line.startswith(("#", "*", "-", "!", "[", ">")):
+            flush()
+            merged.append(line)
+            continue
+        if re.fullmatch(r"[A-Z0-9\s:,&.'()/-]{8,}", line):
+            flush()
+            merged.append(line)
+            continue
+        if len(line) <= 40 and re.fullmatch(r"[A-Za-z][A-Za-z0-9 &:/-]{0,39}", line):
+            flush()
+            merged.append(line)
+            continue
+        buffer.append(line)
+
+    flush()
+    return "\n".join(merged)
+
+
 # ── Boilerplate stripping ─────────────────────────────────────────────────────
 
 def _strip_boilerplate(text: str) -> str:
@@ -246,26 +422,15 @@ def _strip_boilerplate(text: str) -> str:
     4. Cut at first footer marker.
     5. Collapse excess blank lines.
     """
-    lines = text.splitlines()
-    n = len(lines)
+    return _extract_article_body(text)
 
-    # Keywords that disqualify a line from being "real prose"
-    _PROSE_EXCLUDE = [
-        "cookie", "privacy policy", "terms of use", "terms of service",
-        "all rights reserved", "personalize your experience",
-        "analytics tools", "we use cookies",
-        "by continuing", "please review our",
-        "manage preferences", "consent",
-    ]
+    lines = _drop_leading_boilerplate(text.splitlines())
 
     def _is_prose(line: str) -> bool:
         s = line.strip()
-        lower = s.lower()
-        if any(kw in lower for kw in _PROSE_EXCLUDE):
+        if not _is_substantive_line(s):
             return False
-        if s.startswith(("[", "*", "!", "-", "|", "#")):
-            return False
-        if s.count("](") >= 3:  # mostly links
+        if s.startswith("#"):
             return False
         return True
 
@@ -285,8 +450,15 @@ def _strip_boilerplate(text: str) -> str:
 
     if prose_idx == -1:
         # Can't find prose — return whole text stripped of nav signals
-        cleaned = re.sub(r"\n{3,}", "\n\n", text)
-        return cleaned.strip()
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("# ") and len(stripped) > 5:
+                return _finalize_content("\n".join(lines[i:]))
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("## ") and len(stripped) > 5:
+                return _finalize_content("\n".join(lines[i:]))
+        return _finalize_content("\n".join(lines))
 
     # ── Phase 2: walk back to find nearest heading ────────────────────────────
     start_idx = prose_idx
@@ -328,6 +500,61 @@ def _strip_boilerplate(text: str) -> str:
     content = re.sub(r"\n{3,}", "\n\n", content)
 
     return content
+
+
+def _extract_article_body(text: str) -> str:
+    text = _merge_wrapped_lines(text)
+    lines = _drop_leading_boilerplate(text.splitlines())
+
+    def _is_prose(line: str) -> bool:
+        s = line.strip()
+        if not _is_substantive_line(s):
+            return False
+        if s.startswith("#"):
+            return False
+        return True
+
+    prose_idx = -1
+    for i, line in enumerate(lines):
+        if len(line.strip()) > 200 and _is_prose(line):
+            prose_idx = i
+            break
+
+    if prose_idx == -1:
+        for i, line in enumerate(lines):
+            if len(line.strip()) > 120 and _is_prose(line):
+                prose_idx = i
+                break
+
+    if prose_idx == -1:
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("# ") and len(stripped) > 5:
+                return _finalize_content("\n".join(lines[i:]))
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("## ") and len(stripped) > 5:
+                return _finalize_content("\n".join(lines[i:]))
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if len(stripped) > 40 and _is_substantive_line(stripped):
+                return _finalize_content("\n".join(lines[i:]))
+        return _finalize_content("\n".join(lines))
+
+    start_idx = prose_idx
+    for i in range(prose_idx - 1, max(-1, prose_idx - 40), -1):
+        stripped = lines[i].strip()
+        if stripped.startswith("# ") and len(stripped) > 5:
+            start_idx = i
+            break
+        if stripped.startswith("## ") and len(stripped) > 5 and start_idx == prose_idx:
+            start_idx = i
+
+    return _finalize_content("\n".join(lines[start_idx:]))
+
+
+def _strip_boilerplate(text: str) -> str:
+    return _extract_article_body(text)
 
 
 # ── Link discovery ────────────────────────────────────────────────────────────
@@ -558,36 +785,37 @@ def _fetch_article(url: str, firm_key: str, firm_cfg: dict, title: str, index: d
         text = _fetch_pdf_text(url)
         if not text or len(text) < 300:
             return False
-        first_line = text.split("\n")[0].strip()
+        content = _extract_article_body(text)
+        first_line = content.split("\n")[0].strip() if content else ""
         if 10 < len(first_line) < 120:
             title = first_line
         article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
         article_dir.mkdir(parents=True, exist_ok=True)
         images = _extract_images_from_pdf(pdf_bytes, article_dir)
-        content = text
 
     else:
         # Check if firm has a PDF in the raw HTML — download that instead if possible
         pdf_url: str | None = None
-        if firm_cfg.get("pdf_in_html"):
-            raw_r = _get(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
-            if raw_r:
-                pdf_url = _find_pdf_in_html(
-                    raw_r.text,
-                    firm_cfg["pdf_html_pattern"],
-                    firm_cfg.get("pdf_base_url", ""),
-                )
-                # Also grab images from raw HTML
-                article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
-                article_dir.mkdir(parents=True, exist_ok=True)
-                images = _extract_images_from_html(raw_r.text, url, article_dir)
+        raw_r = _get(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
+        if firm_cfg.get("pdf_in_html") and raw_r:
+            pdf_url = _find_pdf_in_html(
+                raw_r.text,
+                firm_cfg["pdf_html_pattern"],
+                firm_cfg.get("pdf_base_url", ""),
+            )
+        if raw_r and not pdf_url:
+            pdf_url = _find_pdf_link(raw_r.text, url)
+        if raw_r and "text/html" in raw_r.headers.get("content-type", ""):
+            article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
+            article_dir.mkdir(parents=True, exist_ok=True)
+            images = _extract_images_from_html(raw_r.text, url, article_dir)
 
         if pdf_url:
             print(f"    [pdf] {pdf_url[-60:]}")
             time.sleep(REQUEST_DELAY)
             pdf_text = _fetch_pdf_text(pdf_url)
             if pdf_text and len(pdf_text) > 500:
-                content = pdf_text
+                content = _extract_article_body(pdf_text)
                 # Also get any additional images from the PDF
                 pdf_r = _get(pdf_url)
                 if pdf_r:
@@ -601,6 +829,13 @@ def _fetch_article(url: str, firm_key: str, firm_cfg: dict, title: str, index: d
             jina_content = _fetch_via_jina(url)
             if not jina_content or len(jina_content) < 300:
                 return False
+            generic_pdf_url = _find_pdf_link(jina_content, url)
+            if generic_pdf_url:
+                print(f"    [pdf] {generic_pdf_url[-60:]}")
+                time.sleep(REQUEST_DELAY)
+                pdf_text = _fetch_pdf_text(generic_pdf_url)
+                if pdf_text and len(pdf_text) > 500:
+                    jina_content = pdf_text
 
             # Guard: skip pages that returned a "not found" result
             if re.search(r"page.{0,10}not found", jina_content[:500], re.IGNORECASE):
@@ -624,7 +859,8 @@ def _fetch_article(url: str, firm_key: str, firm_cfg: dict, title: str, index: d
                         break
 
             # Strip boilerplate
-            content = _strip_boilerplate(jina_content)
+            content = _extract_article_body(jina_content)
+            content = _finalize_content(content)
             if len(content) < 300:
                 content = jina_content  # stripping too aggressive — use raw
 
@@ -638,6 +874,15 @@ def _fetch_article(url: str, firm_key: str, firm_cfg: dict, title: str, index: d
                 # Always supplement with images found in Jina markdown
                 md_images = _extract_images_from_markdown(content, article_dir, len(images))
                 images.extend(md_images)
+
+    content = _finalize_content(content)
+    substantive_chars = _substantive_char_count(content)
+    if not _has_minimum_substance(content):
+        print(
+            f"    [skip] Thin/boilerplate content ({substantive_chars} substantive chars): {url[:70]}",
+            file=sys.stderr,
+        )
+        return False
 
     if not article_dir:
         article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
