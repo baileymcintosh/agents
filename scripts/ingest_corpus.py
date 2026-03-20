@@ -27,9 +27,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -195,6 +197,7 @@ _PROSE_EXCLUDE = [
 ]
 
 _MIN_SUBSTANTIVE_CHARS = 500
+DEFAULT_REVIEW_MODEL = os.getenv("CORPUS_REVIEW_MODEL", "gpt-4o-mini")
 
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
@@ -406,6 +409,142 @@ def _merge_wrapped_lines(text: str) -> str:
 
     flush()
     return "\n".join(merged)
+
+
+def _numbered_text(text: str) -> str:
+    return "\n".join(f"{idx + 1:04d}: {line}" for idx, line in enumerate(text.splitlines()))
+
+
+def _apply_keep_ranges(text: str, keep_ranges: list[list[int]]) -> str:
+    lines = text.splitlines()
+    if not lines:
+        return ""
+    kept: list[str] = []
+    last_end = 0
+    for start, end in sorted(keep_ranges):
+        start = max(1, start)
+        end = min(len(lines), end)
+        if end < start:
+            continue
+        if kept and start > last_end + 1:
+            kept.append("")
+        kept.extend(lines[start - 1:end])
+        last_end = end
+    return "\n".join(kept).strip()
+
+
+@dataclass
+class LinkReview:
+    include: bool
+    content_type: str
+    canonical_title: str
+    reason: str
+
+
+@dataclass
+class ArticleReview:
+    approve: bool
+    content_type: str
+    clean_title: str
+    keep_ranges: list[list[int]]
+    reason: str
+
+
+class CorpusReviewAgent:
+    def __init__(self, model: str = DEFAULT_REVIEW_MODEL) -> None:
+        import openai
+
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is required for agent-reviewed corpus ingestion.")
+        self.client = openai.OpenAI(api_key=api_key)
+        self.model = model
+
+    def _complete_json(self, system_prompt: str, user_prompt: str) -> dict:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=1200,
+        )
+        content = response.choices[0].message.content or "{}"
+        return json.loads(content)
+
+    def review_link(self, firm_key: str, firm_cfg: dict, title: str, url: str, preview: str) -> LinkReview:
+        system_prompt = (
+            "You are screening candidate links from an investment firm's research/insights page. "
+            "Your job is to decide whether the link is a substantive written research item worth archiving. "
+            "Approve substantive written research only: reports, white papers, memos, research articles, "
+            "market commentary, long-form analysis. Reject podcasts, videos, media appearances, event pages, "
+            "teasers, landing pages, nav pages, hiring pages, press releases, and thin promotional posts. "
+            "Use common sense like a human curator."
+        )
+        payload = self._complete_json(
+            system_prompt,
+            (
+                f"Firm: {firm_cfg['name']} ({firm_key})\n"
+                f"URL: {url}\n"
+                f"Candidate title: {title}\n"
+                "Preview text follows.\n\n"
+                f"{preview[:6000]}\n\n"
+                "Return JSON with keys: decision (include/reject), content_type, canonical_title, reason."
+            ),
+        )
+        decision = str(payload.get("decision", "reject")).lower()
+        content_type = str(payload.get("content_type", "other")).lower()
+        canonical_title = str(payload.get("canonical_title", title)).strip() or title
+        reason = str(payload.get("reason", "")).strip()
+        include = decision == "include" and content_type not in {"podcast", "video", "audio", "teaser", "landing_page", "press_release", "navigation", "other"}
+        return LinkReview(include=include, content_type=content_type, canonical_title=canonical_title, reason=reason)
+
+    def review_article(self, firm_key: str, firm_cfg: dict, title: str, url: str, content: str) -> ArticleReview:
+        numbered = _numbered_text(content)
+        system_prompt = (
+            "You are reviewing scraped content from an investment firm's research page. "
+            "Keep only the actual written report/article body. Remove social share blocks, tags, related links, "
+            "recommendation cards, podcast/video embeds, repeated headers/footers, cover-page legal boilerplate, "
+            "table of contents noise, and generic site chrome. "
+            "Approve only substantive written research. Reject podcasts, videos, transcripts, teaser pages, "
+            "landing pages, and thin items. "
+            "Return line ranges from the provided numbered text that should be kept."
+        )
+        payload = self._complete_json(
+            system_prompt,
+            (
+                f"Firm: {firm_cfg['name']} ({firm_key})\n"
+                f"URL: {url}\n"
+                f"Current title: {title}\n\n"
+                "Numbered content:\n"
+                f"{numbered[:90000]}\n\n"
+                "Return JSON with keys: decision (approve/reject), content_type, clean_title, "
+                "keep_ranges (array of [start,end]), reason."
+            ),
+        )
+        decision = str(payload.get("decision", "reject")).lower()
+        content_type = str(payload.get("content_type", "other")).lower()
+        clean_title = str(payload.get("clean_title", title)).strip() or title
+        keep_ranges = payload.get("keep_ranges", [])
+        if not isinstance(keep_ranges, list):
+            keep_ranges = []
+        normalized_ranges: list[list[int]] = []
+        for item in keep_ranges:
+            if isinstance(item, list) and len(item) == 2:
+                try:
+                    normalized_ranges.append([int(item[0]), int(item[1])])
+                except Exception:
+                    continue
+        reason = str(payload.get("reason", "")).strip()
+        approve = decision == "approve" and content_type not in {"podcast", "video", "audio", "transcript", "teaser", "landing_page", "press_release", "navigation", "other"}
+        return ArticleReview(
+            approve=approve,
+            content_type=content_type,
+            clean_title=clean_title,
+            keep_ranges=normalized_ranges,
+            reason=reason,
+        )
 
 
 # ── Boilerplate stripping ─────────────────────────────────────────────────────
@@ -769,13 +908,21 @@ def _already_downloaded(index: dict, url: str) -> bool:
 
 # ── Per-article fetcher ───────────────────────────────────────────────────────
 
-def _fetch_article(url: str, firm_key: str, firm_cfg: dict, title: str, index: dict) -> bool:
+def _fetch_article(
+    url: str,
+    firm_key: str,
+    firm_cfg: dict,
+    title: str,
+    index: dict,
+    reviewer: CorpusReviewAgent | None = None,
+) -> bool:
     firm_name = firm_cfg["name"]
     is_pdf = url.lower().endswith(".pdf")
 
     date_str = datetime.utcnow().strftime("%Y-%m")
     article_dir: Path | None = None
     images: list[str] = []
+    article_review: ArticleReview | None = None
 
     if is_pdf:
         r = _get(url)
@@ -876,6 +1023,14 @@ def _fetch_article(url: str, firm_key: str, firm_cfg: dict, title: str, index: d
                 images.extend(md_images)
 
     content = _finalize_content(content)
+    if reviewer:
+        article_review = reviewer.review_article(firm_key, firm_cfg, title, url, content)
+        if not article_review.approve:
+            print(f"    [skip] Agent rejected article as {article_review.content_type}: {article_review.reason}", file=sys.stderr)
+            return False
+        reviewed_content = _apply_keep_ranges(content, article_review.keep_ranges) if article_review.keep_ranges else content
+        content = _finalize_content(reviewed_content)
+        title = article_review.clean_title or title
     substantive_chars = _substantive_char_count(content)
     if not _has_minimum_substance(content):
         print(
@@ -899,6 +1054,20 @@ def _fetch_article(url: str, firm_key: str, firm_cfg: dict, title: str, index: d
         f"---\n\n"
     )
     (article_dir / "article.md").write_text(frontmatter + content, encoding="utf-8")
+    if article_review:
+        (article_dir / "review.json").write_text(
+            json.dumps(
+                {
+                    "content_type": article_review.content_type,
+                    "reason": article_review.reason,
+                    "keep_ranges": article_review.keep_ranges,
+                    "model": reviewer.model if reviewer else "",
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
     index.setdefault("articles", []).append({
         "firm": firm_key,
@@ -909,13 +1078,19 @@ def _fetch_article(url: str, firm_key: str, firm_cfg: dict, title: str, index: d
         "downloaded": datetime.utcnow().strftime("%Y-%m-%d"),
         "chars": len(content),
         "images": images,
+        "content_type": article_review.content_type if article_review else "",
     })
     return True
 
 
 # ── Per-firm ingestor ─────────────────────────────────────────────────────────
 
-def ingest_firm(firm_key: str, max_articles: int = 50, refresh: bool = False) -> int:
+def ingest_firm(
+    firm_key: str,
+    max_articles: int = 50,
+    refresh: bool = False,
+    reviewer: CorpusReviewAgent | None = None,
+) -> int:
     firm = FIRMS.get(firm_key)
     if not firm:
         print(f"Unknown firm: {firm_key}")
@@ -947,10 +1122,21 @@ def ingest_firm(firm_key: str, max_articles: int = 50, refresh: bool = False) ->
             print(f"  [skip] {title[:60]}")
             continue
 
+        if reviewer:
+            preview = _fetch_via_jina(url, max_chars=6000)
+            if not preview:
+                print(f"  [skip] No preview available: {title[:60]}", file=sys.stderr)
+                continue
+            link_review = reviewer.review_link(firm_key, firm, title, url, preview)
+            if not link_review.include:
+                print(f"  [skip] Agent rejected link as {link_review.content_type}: {title[:60]}")
+                continue
+            title = link_review.canonical_title
+
         print(f"  [{i+1}/{min(len(links), max_articles)}] {title[:70]}")
         time.sleep(REQUEST_DELAY)
 
-        ok = _fetch_article(url, firm_key, firm, title, index)
+        ok = _fetch_article(url, firm_key, firm, title, index, reviewer=reviewer)
         if ok:
             entry = index["articles"][-1]
             img_note = f", {len(entry['images'])} charts" if entry["images"] else ""
@@ -972,6 +1158,8 @@ def main() -> None:
     parser.add_argument("--max", type=int, default=50, help="Max articles per firm (default: 50)")
     parser.add_argument("--refresh", action="store_true", help="Re-download already-archived articles")
     parser.add_argument("--list", action="store_true", help="List registered firms and exit")
+    parser.add_argument("--agent-review", action="store_true", help="Use an LLM reviewer to approve candidate links and cleaned article bodies")
+    parser.add_argument("--review-model", default=DEFAULT_REVIEW_MODEL, help=f"Model for corpus review agent (default: {DEFAULT_REVIEW_MODEL})")
     args = parser.parse_args()
 
     if args.list:
@@ -1005,15 +1193,17 @@ def main() -> None:
             encoding="utf-8",
         )
 
+    reviewer = CorpusReviewAgent(model=args.review_model) if args.agent_review else None
+
     if args.firm:
         if args.firm not in FIRMS:
             print(f"Unknown firm '{args.firm}'. Available: {', '.join(FIRMS)}")
             sys.exit(1)
-        ingest_firm(args.firm, max_articles=args.max, refresh=args.refresh)
+        ingest_firm(args.firm, max_articles=args.max, refresh=args.refresh, reviewer=reviewer)
     else:
         total = 0
         for firm_key in FIRMS:
-            total += ingest_firm(firm_key, max_articles=args.max, refresh=args.refresh)
+            total += ingest_firm(firm_key, max_articles=args.max, refresh=args.refresh, reviewer=reviewer)
         print(f"\n{'='*60}")
         print(f"Total new articles saved: {total}")
 
