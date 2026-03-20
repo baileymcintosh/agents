@@ -1,0 +1,15 @@
+{
+  "content_type": "article",
+  "reason": "The provided content contains substantive written research discussing the recent performance of gold, its implications, and related questions, which aligns with the request for investment-related analysis.",
+  "keep_ranges": [
+    [
+      5,
+      9
+    ],
+    [
+      11,
+      11
+    ]
+  ],
+  "model": "gpt-4o-mini"
+}

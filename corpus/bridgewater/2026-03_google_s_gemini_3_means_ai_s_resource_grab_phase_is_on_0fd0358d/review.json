@@ -1,0 +1,11 @@
+{
+  "content_type": "article",
+  "reason": "The content provides substantive analysis and insights regarding Google's Gemini 3 model and its implications for the AI ecosystem, economies, and markets.",
+  "keep_ranges": [
+    [
+      3,
+      33
+    ]
+  ],
+  "model": "gpt-4o-mini"
+}

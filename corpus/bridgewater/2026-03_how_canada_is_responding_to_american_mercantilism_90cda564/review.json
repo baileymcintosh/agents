@@ -1,0 +1,11 @@
+{
+  "content_type": "written_report",
+  "reason": "The content contains a substantive written report discussing Canada's economic response to American mercantilism, including specific actions and insights into its economic strategy.",
+  "keep_ranges": [
+    [
+      1,
+      33
+    ]
+  ],
+  "model": "gpt-4o-mini"
+}

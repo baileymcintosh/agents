@@ -1,0 +1,15 @@
+{
+  "content_type": "report",
+  "reason": "The content contains substantive analysis and insights regarding inflation risks and its implications for investors, fitting the criteria for valuable written research.",
+  "keep_ranges": [
+    [
+      1,
+      27
+    ],
+    [
+      39,
+      61
+    ]
+  ],
+  "model": "gpt-4o-mini"
+}

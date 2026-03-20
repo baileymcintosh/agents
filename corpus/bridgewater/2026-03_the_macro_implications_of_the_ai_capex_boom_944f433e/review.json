@@ -1,0 +1,19 @@
+{
+  "content_type": "written research",
+  "reason": "The content contains substantial written research on the macroeconomic implications of AI capex, discussing its impact on US GDP, labor markets, inflation, and investment trends, which is consistent with the requirements for approval.",
+  "keep_ranges": [
+    [
+      1,
+      25
+    ],
+    [
+      31,
+      72
+    ],
+    [
+      76,
+      96
+    ]
+  ],
+  "model": "gpt-4o-mini"
+}

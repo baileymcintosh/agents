@@ -458,7 +458,84 @@
         "img_07.png",
         "img_08.png"
       ]
+    },
+    {
+      "firm": "bridgewater",
+      "firm_name": "Bridgewater Associates",
+      "title": "Modern Mercantilism",
+      "url": "https://www.bridgewater.com/research-and-insights/modern-mercantilism",
+      "dir": "bridgewater/2026-03_modern_mercantilism_b85670c5",
+      "downloaded": "2026-03-20",
+      "chars": 653,
+      "images": [],
+      "content_type": "written_report"
+    },
+    {
+      "firm": "bridgewater",
+      "firm_name": "Bridgewater Associates",
+      "title": "The Macro Implications of the AI Capex Boom",
+      "url": "https://www.bridgewater.com/research-and-insights/the-macro-implications-of-the-ai-capex-boom",
+      "dir": "bridgewater/2026-03_the_macro_implications_of_the_ai_capex_boom_944f433e",
+      "downloaded": "2026-03-20",
+      "chars": 19149,
+      "images": [],
+      "content_type": "written research"
+    },
+    {
+      "firm": "bridgewater",
+      "firm_name": "Bridgewater Associates",
+      "title": "Google’s Gemini 3 Means AI’s “Resource Grab” Phase Is On",
+      "url": "https://www.bridgewater.com/research-and-insights/googles-gemini-3-means-ais-resource-grab-phase-is-on",
+      "dir": "bridgewater/2026-03_google_s_gemini_3_means_ai_s_resource_grab_phase_is_on_0fd0358d",
+      "downloaded": "2026-03-20",
+      "chars": 10858,
+      "images": [],
+      "content_type": "article"
+    },
+    {
+      "firm": "bridgewater",
+      "firm_name": "Bridgewater Associates",
+      "title": "How Canada Is Responding to American Mercantilism",
+      "url": "https://www.bridgewater.com/research-and-insights/how-canada-is-responding-to-american-mercantilism",
+      "dir": "bridgewater/2026-03_how_canada_is_responding_to_american_mercantilism_90cda564",
+      "downloaded": "2026-03-20",
+      "chars": 4935,
+      "images": [],
+      "content_type": "written_report"
+    },
+    {
+      "firm": "bridgewater",
+      "firm_name": "Bridgewater Associates",
+      "title": "Power Politics: Energy Self-Sufficiency in a Modern Mercantilist World",
+      "url": "https://www.bridgewater.com/research-and-insights/power-politics-energy-self-sufficiency-in-a-modern-mercantilist-world",
+      "dir": "bridgewater/2026-03_power_politics_energy_self_sufficiency_in_a_modern_merc_0790b651",
+      "downloaded": "2026-03-20",
+      "chars": 30665,
+      "images": [],
+      "content_type": "written report"
+    },
+    {
+      "firm": "bridgewater",
+      "firm_name": "Bridgewater Associates",
+      "title": "Taking Stock of the Gold Rally",
+      "url": "https://www.bridgewater.com/research-and-insights/taking-stock-of-the-gold-rally",
+      "dir": "bridgewater/2026-03_taking_stock_of_the_gold_rally_a0a5695f",
+      "downloaded": "2026-03-20",
+      "chars": 1172,
+      "images": [],
+      "content_type": "article"
+    },
+    {
+      "firm": "bridgewater",
+      "firm_name": "Bridgewater Associates",
+      "title": "A New Era of Higher Inflation Risks",
+      "url": "https://www.bridgewater.com/research-and-insights/a-new-era-of-higher-inflation-risks",
+      "dir": "bridgewater/2026-03_a_new_era_of_higher_inflation_risks_376269b7",
+      "downloaded": "2026-03-20",
+      "chars": 10037,
+      "images": [],
+      "content_type": "report"
     }
   ],
-  "last_updated": "2026-03-19T19:33:26.145324"
+  "last_updated": "2026-03-20T06:23:35.099970"
 }

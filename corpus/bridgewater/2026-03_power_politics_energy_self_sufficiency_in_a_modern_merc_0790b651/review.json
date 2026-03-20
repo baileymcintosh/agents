@@ -1,0 +1,55 @@
+{
+  "content_type": "written report",
+  "reason": "The content includes substantive analysis of energy self-sufficiency across major economies, providing insights essential for understanding global competitive dynamics in the context of energy and geopolitical strategy.",
+  "keep_ranges": [
+    [
+      15,
+      15
+    ],
+    [
+      17,
+      29
+    ],
+    [
+      31,
+      47
+    ],
+    [
+      49,
+      51
+    ],
+    [
+      55,
+      71
+    ],
+    [
+      75,
+      79
+    ],
+    [
+      87,
+      89
+    ],
+    [
+      93,
+      97
+    ],
+    [
+      102,
+      102
+    ],
+    [
+      106,
+      110
+    ],
+    [
+      114,
+      126
+    ],
+    [
+      129,
+      149
+    ]
+  ],
+  "model": "gpt-4o-mini"
+}
