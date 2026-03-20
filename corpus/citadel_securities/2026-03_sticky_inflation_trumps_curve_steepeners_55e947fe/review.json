@@ -1,0 +1,11 @@
+{
+  "content_type": "report",
+  "reason": "The content contains substantive written research and analysis on inflation, labor market conditions, and economic policy, which aligns with the review criteria.",
+  "keep_ranges": [
+    [
+      5,
+      27
+    ]
+  ],
+  "model": "gpt-4o-mini"
+}

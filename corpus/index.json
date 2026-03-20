@@ -535,7 +535,40 @@
       "chars": 10037,
       "images": [],
       "content_type": "report"
+    },
+    {
+      "firm": "citadel_securities",
+      "firm_name": "Citadel Securities",
+      "title": "Rotational Pain But Fundamentals Intact",
+      "url": "https://www.citadelsecurities.com/news-and-insights/rotational-pain-but-fundamentals-intact",
+      "dir": "citadel_securities/2026-03_rotational_pain_but_fundamentals_intact_330b2e76",
+      "downloaded": "2026-03-20",
+      "chars": 4878,
+      "images": [],
+      "content_type": "written_report"
+    },
+    {
+      "firm": "citadel_securities",
+      "firm_name": "Citadel Securities",
+      "title": "Modeling the Retail Sell Inflection Point",
+      "url": "https://www.citadelsecurities.com/news-and-insights/modeling-the-retail-sell-inflection-point",
+      "dir": "citadel_securities/2026-03_modeling_the_retail_sell_inflection_point_f4bf55e2",
+      "downloaded": "2026-03-20",
+      "chars": 1282,
+      "images": [],
+      "content_type": "research_report"
+    },
+    {
+      "firm": "citadel_securities",
+      "firm_name": "Citadel Securities",
+      "title": "Sticky Inflation Trumps Curve Steepeners",
+      "url": "https://www.citadelsecurities.com/news-and-insights/sticky-inflation-trumps-curve-steepeners",
+      "dir": "citadel_securities/2026-03_sticky_inflation_trumps_curve_steepeners_55e947fe",
+      "downloaded": "2026-03-20",
+      "chars": 6414,
+      "images": [],
+      "content_type": "report"
     }
   ],
-  "last_updated": "2026-03-20T06:23:35.099970"
+  "last_updated": "2026-03-20T06:48:02.005967"
 }

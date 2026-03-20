@@ -1,0 +1,11 @@
+{
+  "content_type": "written_report",
+  "reason": "The content contains substantive analysis and commentary on the role of the Federal Reserve and its impact on economic policy, making it appropriate for retention.",
+  "keep_ranges": [
+    [
+      1,
+      5
+    ]
+  ],
+  "model": "gpt-4o-mini"
+}

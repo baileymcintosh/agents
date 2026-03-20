@@ -1,0 +1,11 @@
+{
+  "content_type": "research_report",
+  "reason": "Substantive written research on retail investor behavior and market dynamics.",
+  "keep_ranges": [
+    [
+      7,
+      15
+    ]
+  ],
+  "model": "gpt-4o-mini"
+}
