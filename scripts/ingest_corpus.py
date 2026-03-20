@@ -75,12 +75,10 @@ FIRMS: dict[str, dict] = {
     "citadel_securities": {
         "name": "Citadel Securities",
         "insights_url": "https://www.citadelsecurities.com/news-and-insights/category/market-insights/",
-        "discovery": "seed_urls",
+        "discovery": "jina_paginated",
         # JS-rendered category page — add known article URLs here as discovered
-        "seed_urls": [
-            ("Per Mare, Necessarium: Views on Rates & Financial Conditions",
-             "https://www.citadelsecurities.com/news-and-insights/per-mare-necessarium-views-on-rates-financial-conditions/"),
-        ],
+        "page_url_template": "https://www.citadelsecurities.com/news-and-insights/category/market-insights/page/{page}/",
+        "max_pages": 22,
         "article_pattern": r"citadelsecurities\.com/news-and-insights/(?!category|in-the-media|policy)[a-z0-9\-]+/?$",
         "type": "market_maker",
     },
@@ -699,6 +697,31 @@ def _strip_boilerplate(text: str) -> str:
 # ── Link discovery ────────────────────────────────────────────────────────────
 
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
+_RAW_URL_RE = re.compile(r"https?://[^\s)>\"]+")
+
+
+def _iter_discovered_links(content: str) -> list[tuple[str, str]]:
+    links: list[tuple[str, str]] = []
+    seen_urls: set[str] = set()
+
+    for match in _MD_LINK_RE.finditer(content):
+        title = match.group(1).strip()
+        url = match.group(2).strip()
+        if url not in seen_urls:
+            seen_urls.add(url)
+            links.append((title, url))
+
+    for match in _RAW_URL_RE.finditer(content):
+        url = match.group(0).strip().rstrip(".,")
+        if url in seen_urls:
+            continue
+        parsed = urlparse(url)
+        slug = parsed.path.rstrip("/").split("/")[-1]
+        title = slug.replace("-", " ").replace("_", " ").title() if slug else url
+        seen_urls.add(url)
+        links.append((title, url))
+
+    return links
 
 
 def _discover_via_sitemap(sitemap_url: str, article_pattern: str,
@@ -750,9 +773,7 @@ def _discover_via_jina_links(insights_url: str, article_pattern: str,
     pattern = re.compile(article_pattern, re.IGNORECASE)
     skip = re.compile(skip_pattern, re.IGNORECASE) if skip_pattern else None
 
-    for match in _MD_LINK_RE.finditer(content):
-        title = match.group(1).strip()
-        url = match.group(2).strip()
+    for title, url in _iter_discovered_links(content):
         parsed = urlparse(url)
         clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
         if clean_url in seen:
@@ -765,6 +786,44 @@ def _discover_via_jina_links(insights_url: str, article_pattern: str,
             continue
         seen.add(clean_url)
         results.append((title, clean_url))
+
+    return results
+
+
+def _discover_via_jina_paginated(
+    insights_url: str,
+    page_url_template: str,
+    max_pages: int,
+    article_pattern: str,
+    skip_pattern: str = "",
+) -> list[tuple[str, str]]:
+    all_pages = [insights_url] + [page_url_template.format(page=i) for i in range(2, max_pages + 1)]
+    seen: set[str] = set()
+    results: list[tuple[str, str]] = []
+    pattern = re.compile(article_pattern, re.IGNORECASE)
+    skip = re.compile(skip_pattern, re.IGNORECASE) if skip_pattern else None
+
+    for page_url in all_pages:
+        print(f"  Discovering from: {page_url}")
+        content = _fetch_via_jina(page_url, max_chars=80000)
+        if not content:
+            continue
+
+        for title, url in _iter_discovered_links(content):
+            title = title.strip()
+            url = url.strip()
+            parsed = urlparse(url)
+            clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+            if clean_url in seen:
+                continue
+            if not pattern.search(clean_url):
+                continue
+            if skip and skip.search(clean_url):
+                continue
+            if any(x in clean_url for x in ("/tag/", "/category/", "/author/", "/page/", "/feed")):
+                continue
+            seen.add(clean_url)
+            results.append((title, clean_url))
 
     return results
 
@@ -1108,6 +1167,14 @@ def ingest_firm(
     elif firm["discovery"] == "seed_urls":
         links = list(firm.get("seed_urls", []))
         print(f"  Using {len(links)} seeded URLs")
+    elif firm["discovery"] == "jina_paginated":
+        links = _discover_via_jina_paginated(
+            firm["insights_url"],
+            firm["page_url_template"],
+            int(firm.get("max_pages", 1)),
+            firm["article_pattern"],
+            skip_pattern,
+        )
     else:
         links = _discover_via_jina_links(firm["insights_url"], firm["article_pattern"], skip_pattern)
 
