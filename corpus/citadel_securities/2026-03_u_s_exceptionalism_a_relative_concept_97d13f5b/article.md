@@ -1,0 +1,54 @@
+---
+title: "U.S. Exceptionalism…A Relative Concept"
+source: "Citadel Securities"
+firm: "citadel_securities"
+url: "https://www.citadelsecurities.com/news-and-insights/us-exceptionalisma-relative-concept"
+downloaded: "2026-03-20"
+images: ["img_01.png", "img_02.png", "img_03.png", "img_04.png", "img_05.png", "img_06.png", "img_07.png"]
+---
+
+# U.S. Exceptionalism…A Relative Concept
+
+June 14, 2025
+
+### By Nohshad Shah
+
+US EQUITY MARKETS have continued to perform well this month… with SPX breaking through the 6,000 level, prior to Friday’s correction on Israeli strikes. As I’ve been stating for many weeks, this is entirely logical given the macro backdrop of solid economic growth…a stable labour market…inflation that is not accelerating…and easy financial conditions (FCI – chart below). US exceptionalism is a construct of reserve currency status, which allows for lower financing costs (used to fund deficits)…global leadership in tech innovation…the world’s best academic and research institutions…deep capital markets…and a flexible labour force. Much of this came under threat with the Trump Administration’s overly ambitious attempt at re-ordering global trade on liberation day…in addition to the continued expansion of budget deficits, which threatened to ignite bond market vigilantes. But…from a forward-looking markets perspective, both concerns are now behind us. President Trump’s tariff agenda seems firmly in the rearview mirror with news this week of a US-China deal and Trump himself stating that the deal is “done” subject to final approval from leaders of both countries. Supply of rare earths was a key component of the deal, as were indications that the White House could ease restrictions on selling chips to China in exchange for this – a significant policy shift from the Biden-era. Whilst the fast-approaching end of the 90-day reciprocal tariffs pause (9 July) could bring further headline turbulence, we are a far cry from the effective trade embargo of April – and the market knows it. On the fiscal front, the reality is that the current Administration’s bill continues an infamous lineage of fiscal profligacy from the US state. CBO estimates suggest the bill would increase the cumulative deficit to $4.5tn with an additional $687bn in debt service costs over the decade…and provide a gain of $12,000 to the top 10% of households, with most economists expecting the deficit to rise to ~7% if the bill continues its passage through the legislature. Whilst bond markets have been concerned , it seems to me that much of this news is “in the price”, at least for now…and whilst we’ve had a couple of jittery Treasury auctions, the implications have not been as dramatic as vigilantes would’ve hoped for – at 4.40% 10y bond yields are close to the middle of the range since 2023. Ultimately, the tail risk outcomes around Trump policies have been sharply curtailed in recent weeks, providing a tailwind for risk assets. Whilst new risks will surely emerge, the reality is that for capital allocators the US remains the only game in town…rapidly accelerating innovation in AI over the next 12-18 months will not only serve the valuations of big tech hyper-scalers who are investing hundreds of billions in this space…it will allow old companies to vastly improve their operations…and new companies will no doubt emerge, delivering margin expansion across sectors and dramatically magnifying economic growth. You do not want to miss this.
+
+US Financials Conditions Index
+
+![Image 1](https://www.citadelsecurities.com/wp-content/uploads/sites/2/2025/06/Us-Exceptionalism_1.png)
+
+Source: Bloomberg, 13jun25
+
+INFLATION DATA CAME IN SOFTER THAN EXPECTED… with Core CPI at 0.13% MoM (2.8% YoY) reflecting a benign pricing environment in May, even in the aftermath of liberation day. Whilst welcome, this likely doesn’t reflect the full picture given firms are likely to have utilised a combination of inventories and margin compression to manage consumer prices, given the overall narrative around tariffs remained hazy. Apparel came in -0.42% confounding market expectations, but will remain a focus in coming months, given its natural alignment with global supply chains and the likelihood that tariff price shocks are delayed rather than absent altogether. Moreover, upside risks from higher insurer prices have emerged given recent events and oil moves with possible Red Sea shipping disruptions also important to watch. On the broader picture for growth, I continue to believe that survey data will strengthen and with it, the market expectations. However, we are now entering a phase where we could see the hard data become slightly weaker, as reflected in some of the high frequency data like initial claims and Redbook retail sales – neatly reflected in the Dallas Fed’s Weekly Economic Index, which has shown some signs of weakness recently (chart below). This is a perfectly reasonable adjustment…which critically does not signal a recession. In my mind, this backdrop confirms the Fed’s current stance: wait and see. There is no need to cut because growth is solid and financial conditions are already easy…with tail risks which may have been a concern in April, now reduced and the labour market holding up nicely (c.f. last week’s NFP140k; 3m Avg. 133k). There is no need to hike because inflation is starting to look more benign, and expectations remain well anchored (5y breakeven @ 2.30%). Accordingly, I would expect next week’s Fed meeting and SEP to acknowledge greater risks to both sides of the mandate but ultimately reflect a slightly more hawkish tilt with either one or zero rate cuts represented in the median dots for 2025 (personal view: zero cuts delivered). This is not an easy message for Chair Powell to deliver. President Trump continued to pile on the pressure for rate cuts this week saying “I may have to force something” in reference to his demand for a 100bps cut from the Fed. Whilst he didn’t re-iterate a desire to fire Powell, the repeated attacks bring to the fore the risk of an early announcement for his replacement, in an attempt to have some sort of “shadow“ Fed Chair dictate market pricing. Perhaps more importantly, the current favourites for the job are Kevin Warsh, Scott Bessent and Chris Waller…all of whom are seasoned professionals in finance and economics and would likely take a balanced, data-driven approach to setting monetary policy, rather than a political one. From a market perspective, this would not represent a meaningful tail risk (assuming POTUS follows historical precedent in the nominations process). President Trump is wise enough to realise that taking risks on the Chairman of the Federal Reserve is one step too far from a financial market stability perspective. I don’t expect that to change.
+
+![Image 2](https://www.citadelsecurities.com/wp-content/uploads/sites/2/2025/06/Us-Exceptionalism_2.png)
+
+Source: Dallas Fed
+
+FOR ASSET MARKETS…US equities should continue their strong performance and breach ATHs. The most basic point here is that much of the rebound in stocks has been driven by multiple expansion, whilst earnings estimates (and operating margins) have been revised downwards despite robust Q1 earnings (charts below; h/t Ivo Stefanov). If my assertions around a stronger growth backdrop and the AI theme start to kick-in…with positive momentum from fiscal policy early next year…and an on-hold Fed…that is a very supportive environment for stocks – assuming the bond market holds-in and long-end yields remain stable. European equities (SX5E) have outperformed US (SPX) this year by ~6.5%…I would expect this to start to reverse in coming months. Idiosyncratic US risks are deteriorating, EU economic growth is waning…and the ECB is nearing the end of its rate cutting cycle (for now). Moreover, the vast majority of opportunities to invest in new technologies remains in the US, not Europe…as do the capital markets to facilitate those investments. Stepping back, it’s important to remember that the world in aggregate will struggle to reduce its dollar exposure unless the US starts running a trade surplus, instead of a deficit. Foreign ownership of US dollars will continue to expand in-line with the balance of payments ledger. The corollary to this is that until the EU starts to run sizeable deficits with the rest of the world, excess EUR reserves will not be prevalent. So, the only question becomes which assets to hold those dollars in…and in an environment of fiscal profligacy, it makes most sense to hold them in equities compared to bonds. The latest flow data from Japan neatly displays this theme – following a dip around liberation day, flows have remained positive into USD assets, with equities leading the charge (bottom chart; h/t: Grant Wilder). Ultimately, US exceptionalism is a relative theme, and the balance of risks are now in favour of a resurgence.
+
+UK PAYE Payrolled Employees – Monthly Change
+
+![Image 3](https://www.citadelsecurities.com/wp-content/uploads/sites/2/2025/06/Us-Exceptionalism_3.png)
+
+Source: Bloomberg, 13jun25
+
+THE OUTLOOK IN THE UK CONTINUES TO DARKEN…with employment data this week showing a steep -109k MoM drop in PAYE payrolled employees, a multi-year low (chart above). Higher national insurance contributions introduced in April have started to take their toll on both employment and wage growth, which has also cooled. More lagged data for economic growth also showed a -0.3% contraction in April GDP…the worst since October 2023…with output in the all-important services sector falling by 0.4%. Followers of UK markets will know that elevated wage growth has been the thorn in the side for the Bank of England for the past couple of years. Growth and productivity have always been meagre in the UK. Now the labour market is cracking too. Going into next week’s MPC meeting these are crucial considerations for a committee that has often been divided (three ways last month!) on the next course of action. The market prices in just 48bps of rate cuts by the end of this year and ~75bps for the entire cycle. I know many investors have been hurt being long the UK front-end…but now is not the time to hesitate.
+
+![Image 4](https://www.citadelsecurities.com/wp-content/uploads/sites/2/2025/06/Us-Exceptionalism_4.png)
+
+Source: Bloomberg, 13jun25
+
+![Image 5](https://www.citadelsecurities.com/wp-content/uploads/sites/2/2025/06/Us-Exceptionalism_5.png)
+
+Source: Bloomberg, 13jun25
+
+![Image 6](https://www.citadelsecurities.com/wp-content/uploads/sites/2/2025/06/Us-Exceptionalism_6.png)
+
+Source: Bloomberg, 13jun25
+
+![Image 7](https://www.citadelsecurities.com/wp-content/uploads/sites/2/2025/06/Us-Exceptionalism_7.png)
+
+Source: Haver, Citadel Securities

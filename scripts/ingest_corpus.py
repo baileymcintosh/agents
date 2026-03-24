@@ -37,6 +37,15 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import httpx
+try:
+    from bs4 import BeautifulSoup
+except ImportError:  # pragma: no cover - optional runtime dependency
+    BeautifulSoup = None  # type: ignore[assignment]
+
+try:
+    from curl_cffi import requests as curl_requests
+except ImportError:  # pragma: no cover - optional runtime dependency
+    curl_requests = None  # type: ignore[assignment]
 
 # ── Firm registry ─────────────────────────────────────────────────────────────
 FIRMS: dict[str, dict] = {
@@ -75,8 +84,7 @@ FIRMS: dict[str, dict] = {
     "citadel_securities": {
         "name": "Citadel Securities",
         "insights_url": "https://www.citadelsecurities.com/news-and-insights/category/market-insights/",
-        "discovery": "jina_paginated",
-        # JS-rendered category page — add known article URLs here as discovered
+        "discovery": "citadel_paginated",
         "page_url_template": "https://www.citadelsecurities.com/news-and-insights/category/market-insights/page/{page}/",
         "max_pages": 22,
         "article_pattern": r"citadelsecurities\.com/news-and-insights/(?!category|in-the-media|policy)[a-z0-9\-]+/?$",
@@ -84,9 +92,9 @@ FIRMS: dict[str, dict] = {
     },
     "oaktree": {
         "name": "Oaktree Capital Management",
-        "insights_url": "https://www.oaktreecapital.com/insights",
-        "discovery": "jina_links",
-        "article_pattern": r"oaktreecapital\.com/insights/(memo|article|insight)/.+",
+        "insights_url": "https://www.oaktreecapital.com/insights/memos",
+        "discovery": "oaktree_memos",
+        "article_pattern": r"oaktreecapital\.com/(insights/memo/.+|docs/default-source/memos/.+\.pdf)",
         "type": "private_credit",
     },
     "bridgewater": {
@@ -176,6 +184,7 @@ _FOOTER_MARKERS = [
     "explore apollo", "more information", "governance",
     "apollo in the media", "life at apollo",
     "copyright ©", "all rights reserved",
+    "© oaktree capital management", "© 20",
     "legal entities disseminating",
 ]
 
@@ -221,6 +230,41 @@ def _get(url: str, retries: int = 1, retry_delay: float = 1.0, **kwargs) -> http
             print(f"  [warn] GET {url[:80]}: {e}", file=sys.stderr)
             return None
     return None
+
+
+def _browser_get(url: str, retries: int = 2):
+    if curl_requests is None:
+        return None
+    for attempt in range(retries):
+        try:
+            resp = curl_requests.get(url, impersonate="chrome", timeout=TIMEOUT)
+            if resp.status_code == 429 and attempt < retries - 1:
+                delay = 2.0 * (2 ** attempt)
+                print(f"  [warn] browser 429 for {url[:80]} - retrying in {delay:.1f}s", file=sys.stderr)
+                time.sleep(delay)
+                continue
+            if resp.status_code >= 400:
+                raise RuntimeError(f"HTTP {resp.status_code}")
+            return resp
+        except Exception as e:
+            if attempt < retries - 1:
+                delay = 2.0 * (2 ** attempt)
+                print(f"  [warn] browser retry {attempt + 1}/{retries} {url[:80]}: {e}", file=sys.stderr)
+                time.sleep(delay)
+                continue
+            print(f"  [warn] browser GET {url[:80]}: {e}", file=sys.stderr)
+            return None
+    return None
+
+
+def _fetch_browser_html(url: str) -> str:
+    resp = _browser_get(url)
+    if not resp:
+        return ""
+    content_type = str(resp.headers.get("content-type", ""))
+    if "html" not in content_type.lower():
+        return ""
+    return resp.text
 
 
 def _fetch_via_jina(url: str, max_chars: int = 50000) -> str:
@@ -279,6 +323,28 @@ def _find_pdf_link(text: str, base_url: str) -> str | None:
     return urljoin(base_url, pdf_url)
 
 
+def _title_from_pdf_url(url: str) -> str:
+    filename = Path(urlparse(url).path).stem
+    filename = re.sub(r"^\d{4}-\d{2}-\d{2}-", "", filename)
+    filename = filename.replace("-", " ").replace("_", " ").strip()
+    return _clean_text(filename.title()) if filename else ""
+
+
+def _extract_pdf_header_title(text: str) -> str:
+    head = text[:3000]
+    patterns = [
+        r"\bRe:\s+([^\n\r]{3,120})",
+        r"\bTitle:\s+([^\n\r]{3,120})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, head, re.IGNORECASE)
+        if match:
+            candidate = _clean_text(match.group(1))
+            if 3 <= len(candidate) <= 120:
+                return candidate
+    return ""
+
+
 def _contains_boilerplate_marker(text: str) -> bool:
     lower = text.strip().lower()
     return any(marker in lower for marker in _FOOTER_MARKERS) or any(
@@ -303,11 +369,11 @@ def _is_substantive_line(line: str) -> bool:
         return False
     month_hits = len(re.findall(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b", lower))
     digit_ratio = sum(ch.isdigit() for ch in s) / max(len(s), 1)
-    if month_hits >= 2 and digit_ratio > 0.01:
+    if len(s) < 180 and month_hits >= 2 and digit_ratio > 0.01:
         return False
-    if s.startswith(("[", "*", "-", "|")) and "](" in s:
+    if len(s) < 200 and s.startswith(("[", "*", "-", "|")) and "](" in s:
         return False
-    if s.count("](") >= 2:
+    if len(s) < 250 and s.count("](") >= 2:
         return False
     if re.fullmatch(r"#{1,6}", s):
         return False
@@ -327,12 +393,21 @@ def _substantive_char_count(text: str) -> int:
 
 def _cut_footer_lines(lines: list[str]) -> list[str]:
     substantive_seen = False
+    total = len(lines)
     for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped.startswith("# ") or _is_substantive_line(line):
             substantive_seen = True
         if _contains_boilerplate_marker(line):
             if not substantive_seen:
+                continue
+            # PDFs like Oaktree memos repeat copyright/footer lines on every page.
+            # Only treat a boilerplate marker as the true document footer when it
+            # appears late in the text; otherwise drop it during line cleanup.
+            if i < max(20, int(total * 0.7)):
+                tail = [candidate.strip() for candidate in lines[i + 1 : i + 6] if candidate.strip()]
+                if tail and all(len(candidate) < 80 for candidate in tail):
+                    return lines[:i]
                 continue
             return lines[:i]
     return lines
@@ -364,9 +439,15 @@ def _finalize_content(content: str) -> str:
     for line in lines:
         stripped = line.strip()
         lower = stripped.lower()
+        if _contains_boilerplate_marker(stripped):
+            continue
         if lower == "share on":
             continue
         if stripped.startswith("*") and "share on " in lower:
+            continue
+        if lower.startswith(("memo to:", "from:", "re:", "follow us:")):
+            continue
+        if re.fullmatch(r"[A-Z]|\d+", stripped):
             continue
         exhibit_match = re.match(r"(.{80,}?)(?:\s+Exhibit\s+\d+:.*)$", stripped)
         if exhibit_match:
@@ -381,11 +462,20 @@ def _finalize_content(content: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", cleaned)
 
 
-def _has_minimum_substance(content: str) -> bool:
-    return _substantive_char_count(content) >= _MIN_SUBSTANTIVE_CHARS
+def _has_minimum_substance(content: str, min_chars: int = _MIN_SUBSTANTIVE_CHARS) -> bool:
+    return _substantive_char_count(content) >= min_chars
 
 
 def _merge_wrapped_lines(text: str) -> str:
+    # Some PDFs extract decorative drop caps as standalone lines:
+    #   I\nn May ...   T\nhis Time ...
+    # Repair those before any other line-merging heuristics.
+    while True:
+        repaired = re.sub(r"(?m)^([A-Za-z])\s*\n([a-z])", r"\1\2", text)
+        if repaired == text:
+            break
+        text = repaired
+
     lines = text.splitlines()
     nonblank = [line.strip() for line in lines if line.strip()]
     if not nonblank:
@@ -661,6 +751,15 @@ def _extract_article_body(text: str) -> str:
     text = _merge_wrapped_lines(text)
     lines = _drop_leading_boilerplate(text.splitlines())
 
+    def _is_date_line(line: str) -> bool:
+        return bool(
+            re.search(
+                r"\b(?:Jan|January|Feb|February|Mar|March|Apr|April|May|Jun|June|Jul|July|Aug|August|Sep|Sept|September|Oct|October|Nov|November|Dec|December)\s+\d{1,2},\s+\d{4}\b",
+                line.strip(),
+                re.IGNORECASE,
+            )
+        )
+
     def _is_prose(line: str) -> bool:
         s = line.strip()
         if not _is_substantive_line(s):
@@ -668,6 +767,33 @@ def _extract_article_body(text: str) -> str:
         if s.startswith("#"):
             return False
         return True
+
+    heading_candidates: list[tuple[int, int]] = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not (stripped.startswith("# ") and len(stripped) > 5):
+            continue
+        score = 0
+        for j in range(i + 1, min(len(lines), i + 8)):
+            lookahead = lines[j].strip()
+            if not lookahead:
+                continue
+            lower = lookahead.lower()
+            if _is_date_line(lookahead):
+                score += 3
+            if "share on" in lower:
+                score += 2
+            if lower.startswith("### **by") or lower.startswith("### by") or lower.startswith("by "):
+                score += 3
+            if "series:" in lower:
+                score += 1
+        if score:
+            heading_candidates.append((i, score))
+
+    if heading_candidates:
+        best_idx, _ = max(heading_candidates, key=lambda item: (item[1], item[0]))
+        if best_idx > 20:
+            return _finalize_content("\n".join(lines[best_idx:]))
 
     prose_idx = -1
     for i, line in enumerate(lines):
@@ -846,6 +972,168 @@ def _discover_via_jina_paginated(
     return results
 
 
+def _discover_citadel_paginated(
+    insights_url: str,
+    page_url_template: str,
+    max_pages: int,
+    article_pattern: str,
+    skip_pattern: str = "",
+) -> list[tuple[str, str]]:
+    if BeautifulSoup is None:
+        return _discover_via_jina_paginated(insights_url, page_url_template, max_pages, article_pattern, skip_pattern)
+
+    all_pages = [insights_url] + [page_url_template.format(page=i) for i in range(2, max_pages + 1)]
+    seen: set[str] = set()
+    results: list[tuple[str, str]] = []
+    pattern = re.compile(article_pattern, re.IGNORECASE)
+    skip = re.compile(skip_pattern, re.IGNORECASE) if skip_pattern else None
+
+    for page_url in all_pages:
+        print(f"  Discovering from: {page_url}")
+        html = _fetch_browser_html(page_url)
+        if not html:
+            continue
+        soup = BeautifulSoup(html, "html.parser")
+        for link in soup.select("a.text-block-citsec__link[href]"):
+            href = (link.get("href") or "").strip()
+            if not href:
+                continue
+            url = urljoin(page_url, href).rstrip("/")
+            if url in seen:
+                continue
+            if not pattern.search(url):
+                continue
+            if skip and skip.search(url):
+                continue
+            title = (
+                (link.get("aria-label") or "").strip()
+                or (link.get("data-click-text") or "").strip()
+                or url.rstrip("/").split("/")[-1].replace("-", " ").title()
+            )
+            title = _clean_text(title)
+            seen.add(url)
+            results.append((title, url))
+
+    return results
+
+
+def _extract_js_openpdf_url(href: str, base_url: str) -> str | None:
+    match = re.search(r"openPDF\([^,]+,\s*'([^']+\.pdf[^']*)'\)", href, re.IGNORECASE)
+    if not match:
+        return None
+    return urljoin(base_url, match.group(1))
+
+
+def _discover_oaktree_memos(archive_url: str) -> list[tuple[str, str]]:
+    if BeautifulSoup is None:
+        return []
+
+    html = _fetch_browser_html(archive_url)
+    if not html:
+        return []
+
+    soup = BeautifulSoup(html, "html.parser")
+    results: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    skip_titles = {"The Complete Collection", "The Best of . . ."}
+
+    for link in soup.select("a.oc-title-link[href]"):
+        title = _clean_text(link.get_text(" ", strip=True))
+        href = (link.get("href") or "").strip()
+        if not title or not href or title in skip_titles:
+            continue
+        if href.startswith("javascript:openPDF"):
+            resolved = _extract_js_openpdf_url(href, archive_url)
+        else:
+            resolved = urljoin(archive_url, href)
+        if not resolved:
+            continue
+        resolved = resolved.rstrip("/")
+        if resolved in seen:
+            continue
+        if "/docs/default-source/memos/" not in resolved and "/insights/memo/" not in resolved:
+            continue
+        seen.add(resolved)
+        results.append((title, resolved))
+
+    return results
+
+
+def _find_oaktree_pdf_link(html: str, base_url: str) -> str | None:
+    if BeautifulSoup is None:
+        return None
+
+    soup = BeautifulSoup(html, "html.parser")
+    for link in soup.select("a[href]"):
+        href = (link.get("href") or "").strip()
+        text = _clean_text(link.get_text(" ", strip=True))
+        if "PDF (English)" in text and href:
+            if href.startswith("javascript:openPDF"):
+                return _extract_js_openpdf_url(href, base_url)
+            return urljoin(base_url, href)
+    return None
+
+
+def _extract_citadel_article_from_html(html: str, fallback_title: str) -> tuple[str, str, list[str]]:
+    if BeautifulSoup is None:
+        return fallback_title, "", []
+
+    soup = BeautifulSoup(html, "html.parser")
+    header = soup.select_one(".page-section__article-header")
+    body = soup.select_one(".page-section--single-news-body")
+    if not body:
+        return fallback_title, "", []
+
+    title = fallback_title
+    date_text = ""
+    if header:
+        title_tag = header.select_one("h1")
+        if title_tag:
+            clean_title = " ".join(title_tag.get_text(" ", strip=True).split())
+            if clean_title:
+                title = _clean_text(clean_title)
+        date_tag = header.select_one(".page-section__article-header__date")
+        if date_tag:
+            date_text = " ".join(date_tag.get_text(" ", strip=True).split())
+
+    lines: list[str] = [f"# {title}"]
+    if date_text:
+        lines.extend(["", date_text])
+
+    images: list[str] = []
+    legal_markers = (
+        "legal entities disseminating this material",
+        "for institutional use only",
+        "please see additional important disclosures",
+    )
+
+    for tag in body.find_all(["h2", "h3", "h4", "p", "img"], recursive=True):
+        if tag.name == "img":
+            src = (tag.get("src") or "").strip()
+            if src and src not in images:
+                images.append(src)
+                lines.extend(["", f"![Image {len(images)}]({src})"])
+            continue
+
+        text = " ".join(tag.get_text(" ", strip=True).split())
+        if not text:
+            continue
+        lower = text.lower()
+        if any(marker in lower for marker in legal_markers):
+            break
+        if text in {"Share on", "/"}:
+            continue
+        if tag.name == "h2":
+            lines.extend(["", f"## {text}"])
+        elif tag.name in {"h3", "h4"}:
+            lines.extend(["", f"### {text}"])
+        else:
+            lines.extend(["", text])
+
+    content = _finalize_content("\n".join(lines))
+    return title, content, images
+
+
 # ── Image extraction ──────────────────────────────────────────────────────────
 
 def _extract_images_from_html(html: str, base_url: str, out_dir: Path) -> list[str]:
@@ -875,14 +1163,18 @@ def _extract_images_from_html(html: str, base_url: str, out_dir: Path) -> list[s
             continue
 
         time.sleep(0.3)
-        r = _get(full_url)
-        if not r or len(r.content) < MIN_IMAGE_BYTES:
+        browser_r = _browser_get(full_url)
+        content = browser_r.content if browser_r else b""
+        if not content:
+            r = _get(full_url)
+            content = r.content if r else b""
+        if len(content) < MIN_IMAGE_BYTES:
             continue
 
         counter += 1
         save_ext = ext if ext != ".webp" else ".png"
         fname = f"img_{counter:02d}{save_ext}"
-        (out_dir / fname).write_bytes(r.content)
+        (out_dir / fname).write_bytes(content)
         saved.append(fname)
 
     return saved
@@ -941,14 +1233,18 @@ def _extract_images_from_markdown(md: str, out_dir: Path,
         seen.add(url)
 
         time.sleep(0.3)
-        r = _get(url)
-        if not r or len(r.content) < MIN_IMAGE_BYTES:
+        browser_r = _browser_get(url)
+        content = browser_r.content if browser_r else b""
+        if not content:
+            r = _get(url)
+            content = r.content if r else b""
+        if len(content) < MIN_IMAGE_BYTES:
             continue
 
         counter += 1
         save_ext = ext if ext != ".webp" else ".png"
         fname = f"img_{counter:02d}{save_ext}"
-        (out_dir / fname).write_bytes(r.content)
+        (out_dir / fname).write_bytes(content)
         saved.append(fname)
 
     return saved
@@ -975,7 +1271,18 @@ def _url_hash(url: str) -> str:
     return hashlib.md5(url.encode()).hexdigest()[:8]
 
 
+def _clean_text(text: str) -> str:
+    text = re.sub(r"[\u200b-\u200f\u202a-\u202e\ufeff]", "", text)
+    return " ".join(text.split()).strip()
+
+
+def _is_pdf_url(url: str) -> bool:
+    path = urlparse(url).path.lower()
+    return path.endswith(".pdf")
+
+
 def _slug(text: str, max_len: int = 55) -> str:
+    text = _clean_text(text)
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:max_len]
 
 
@@ -994,7 +1301,9 @@ def _fetch_article(
     reviewer: CorpusReviewAgent | None = None,
 ) -> bool:
     firm_name = firm_cfg["name"]
-    is_pdf = url.lower().endswith(".pdf")
+    is_pdf = _is_pdf_url(url)
+    title = _clean_text(title)
+    content = ""
 
     date_str = datetime.utcnow().strftime("%Y-%m")
     article_dir: Path | None = None
@@ -1009,47 +1318,79 @@ def _fetch_article(
         text = _fetch_pdf_text(url)
         if not text or len(text) < 300:
             return False
+        extracted_title = _extract_pdf_header_title(text) or _title_from_pdf_url(url)
+        if extracted_title:
+            title = extracted_title
         content = _extract_article_body(text)
-        first_line = content.split("\n")[0].strip() if content else ""
-        if 10 < len(first_line) < 120:
-            title = first_line
         article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
         article_dir.mkdir(parents=True, exist_ok=True)
         images = _extract_images_from_pdf(pdf_bytes, article_dir)
 
     else:
-        # Check if firm has a PDF in the raw HTML — download that instead if possible
+        if firm_key == "citadel_securities":
+            html = _fetch_browser_html(url)
+            if html:
+                extracted_title, content, body_image_urls = _extract_citadel_article_from_html(html, title)
+                if content:
+                    title = extracted_title or title
+                    article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
+                    article_dir.mkdir(parents=True, exist_ok=True)
+                    images = []
+                    for idx, image_url in enumerate(body_image_urls, start=1):
+                        time.sleep(0.2)
+                        browser_r = _browser_get(image_url)
+                        if not browser_r or len(browser_r.content) < MIN_IMAGE_BYTES:
+                            continue
+                        ext = Path(urlparse(image_url).path).suffix.lower() or ".png"
+                        if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
+                            ext = ".png"
+                        save_ext = ext if ext != ".webp" else ".png"
+                        fname = f"img_{idx:02d}{save_ext}"
+                        (article_dir / fname).write_bytes(browser_r.content)
+                        images.append(fname)
+        elif firm_key == "oaktree" and "/insights/memo/" in url:
+            html = _fetch_browser_html(url)
+            pdf_url = _find_oaktree_pdf_link(html, url) if html else None
+            if pdf_url:
+                print(f"    [pdf] {pdf_url[-60:]}")
+                time.sleep(REQUEST_DELAY)
+                pdf_text = _fetch_pdf_text(pdf_url)
+                if pdf_text and len(pdf_text) > 500:
+                    content = _extract_article_body(pdf_text)
+
         pdf_url: str | None = None
-        raw_r = _get(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
-        if firm_cfg.get("pdf_in_html") and raw_r:
-            pdf_url = _find_pdf_in_html(
-                raw_r.text,
-                firm_cfg["pdf_html_pattern"],
-                firm_cfg.get("pdf_base_url", ""),
-            )
-        if raw_r and not pdf_url:
-            pdf_url = _find_pdf_link(raw_r.text, url)
-        if raw_r and "text/html" in raw_r.headers.get("content-type", ""):
-            article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
-            article_dir.mkdir(parents=True, exist_ok=True)
-            images = _extract_images_from_html(raw_r.text, url, article_dir)
+        if not content:
+            # Check if firm has a PDF in the raw HTML — download that instead if possible
+            raw_r = _get(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}) if firm_key != "citadel_securities" else None
+            if firm_cfg.get("pdf_in_html") and raw_r:
+                pdf_url = _find_pdf_in_html(
+                    raw_r.text,
+                    firm_cfg["pdf_html_pattern"],
+                    firm_cfg.get("pdf_base_url", ""),
+                )
+            if raw_r and not pdf_url:
+                pdf_url = _find_pdf_link(raw_r.text, url)
+            if raw_r and "text/html" in raw_r.headers.get("content-type", ""):
+                article_dir = CORPUS_DIR / firm_key / f"{date_str}_{_slug(title)}_{_url_hash(url)}"
+                article_dir.mkdir(parents=True, exist_ok=True)
+                images = _extract_images_from_html(raw_r.text, url, article_dir)
 
-        if pdf_url:
-            print(f"    [pdf] {pdf_url[-60:]}")
-            time.sleep(REQUEST_DELAY)
-            pdf_text = _fetch_pdf_text(pdf_url)
-            if pdf_text and len(pdf_text) > 500:
-                content = _extract_article_body(pdf_text)
-                # Also get any additional images from the PDF
-                pdf_r = _get(pdf_url)
-                if pdf_r:
-                    extra_imgs = _extract_images_from_pdf(pdf_r.content, article_dir)
-                    images.extend(extra_imgs)
-            else:
-                # PDF failed — fall through to HTML
-                pdf_url = None
+            if pdf_url:
+                print(f"    [pdf] {pdf_url[-60:]}")
+                time.sleep(REQUEST_DELAY)
+                pdf_text = _fetch_pdf_text(pdf_url)
+                if pdf_text and len(pdf_text) > 500:
+                    content = _extract_article_body(pdf_text)
+                    # Also get any additional images from the PDF
+                    pdf_r = _get(pdf_url)
+                    if pdf_r:
+                        extra_imgs = _extract_images_from_pdf(pdf_r.content, article_dir)
+                        images.extend(extra_imgs)
+                else:
+                    # PDF failed — fall through to HTML
+                    pdf_url = None
 
-        if not pdf_url:
+        if not pdf_url and not content:
             jina_content = _fetch_via_jina(url)
             if not jina_content or len(jina_content) < 300:
                 return False
@@ -1079,7 +1420,7 @@ def _fetch_article(
                                    " | Bridgewater", " | Citadel"]:
                         candidate = candidate.replace(suffix, "").strip()
                     if 5 < len(candidate) < 200:
-                        title = candidate
+                        title = _clean_text(candidate)
                         break
 
             # Strip boilerplate
@@ -1108,8 +1449,9 @@ def _fetch_article(
         reviewed_content = _apply_keep_ranges(content, article_review.keep_ranges) if article_review.keep_ranges else content
         content = _finalize_content(reviewed_content)
         title = article_review.clean_title or title
+    min_substantive_chars = 250 if firm_key == "oaktree" and is_pdf else _MIN_SUBSTANTIVE_CHARS
     substantive_chars = _substantive_char_count(content)
-    if not _has_minimum_substance(content):
+    if not _has_minimum_substance(content, min_substantive_chars):
         print(
             f"    [skip] Thin/boilerplate content ({substantive_chars} substantive chars): {url[:70]}",
             file=sys.stderr,
@@ -1146,6 +1488,7 @@ def _fetch_article(
             encoding="utf-8",
         )
 
+    index["articles"] = [entry for entry in index.get("articles", []) if entry.get("url") != url]
     index.setdefault("articles", []).append({
         "firm": firm_key,
         "firm_name": firm_name,
@@ -1193,6 +1536,16 @@ def ingest_firm(
             firm["article_pattern"],
             skip_pattern,
         )
+    elif firm["discovery"] == "citadel_paginated":
+        links = _discover_citadel_paginated(
+            firm["insights_url"],
+            firm["page_url_template"],
+            int(firm.get("max_pages", 1)),
+            firm["article_pattern"],
+            skip_pattern,
+        )
+    elif firm["discovery"] == "oaktree_memos":
+        links = _discover_oaktree_memos(firm["insights_url"])
     else:
         links = _discover_via_jina_links(firm["insights_url"], firm["article_pattern"], skip_pattern)
 
@@ -1212,12 +1565,13 @@ def ingest_firm(
             if not link_review.include:
                 print(f"  [skip] Agent rejected link as {link_review.content_type}: {title[:60]}")
                 continue
-            title = link_review.canonical_title
+            title = _clean_text(link_review.canonical_title)
 
-        print(f"  [{i+1}/{min(len(links), max_articles)}] {title[:70]}")
+        safe_title = _clean_text(title)
+        print(f"  [{i+1}/{min(len(links), max_articles)}] {safe_title[:70]}")
         time.sleep(REQUEST_DELAY)
 
-        ok = _fetch_article(url, firm_key, firm, title, index, reviewer=reviewer)
+        ok = _fetch_article(url, firm_key, firm, safe_title, index, reviewer=reviewer)
         if ok:
             entry = index["articles"][-1]
             img_note = f", {len(entry['images'])} charts" if entry["images"] else ""

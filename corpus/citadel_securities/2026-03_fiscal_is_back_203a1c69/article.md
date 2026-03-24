@@ -1,0 +1,32 @@
+---
+title: "Fiscal is Back"
+source: "Citadel Securities"
+firm: "citadel_securities"
+url: "https://www.citadelsecurities.com/news-and-insights/fiscal-is-back"
+downloaded: "2026-03-20"
+images: ["img_01.png", "img_02.png", "img_03.png"]
+---
+
+# Fiscal is Back
+
+March 08, 2025
+
+### By Nohshad Shah
+
+EUROPE WAS THE MAIN CHARACTER this week in markets. When you utter the phrase “whatever it takes” – a hallowed phrase from the revered Mario Draghi – the market reacts. This is exactly what German Chancellor-in-waiting Friedrich Merz did on Wednesday , in response to recent upheaval in the US-EU relationship driven by a mix of tariff noise and the unravelling of security ties over Russia-Ukraine. The upshot is a proposal for a EUR500bn infrastructure fund in Germany…and the bypassing of the supremely stringent “debt brake” (new debt was limited to 0.35% of GDP) by creating an exclusion for defence spending over 1% of GDP…in addition to looser debt rules for German states. This allows for potentially unlimited spending on defence, with most estimates expecting a rise to ~3.5% of GDP (from ~1.5% in recent years) and an ultimate fiscal boost that could total EUR1tn over ten years. Moreover, at the EU level, an emergency lifting of deficit limits for member countries allows for an average increase in defence spending by 1.5% of GDP, which equates to EUR650bn over four years…with EUR150bn of loans and some other measures also on the table (EIB utlisation, grants). Multipliers to growth will be higher for the infrastructure spend than defence…but make no mistake… this is a very substantial fiscal boost, with the German measures alone equating to ~20% of GDP. If much of this gets agreed, the extent of the fiscal stimulus could be the same as the pandemic-era stimulus seen in 2020. Markets reacted accordingly with ~35bps sell-off in 10y bunds and 1y1y swap moving 30bps to reflect a higher terminal rate. Whilst the ECB proceeded with their cut of 25bps to 2.50% on Thursday, this new information will surely call into question the need for further cuts in April and June…and if the Fed remains on hold, I expect the move in EURUSD to continue (it was at ~1.12 in Oct last year)…and would not be surprised to see a continued move higher in yields, given such a fundamental shift.
+
+![Image 1](https://www.citadelsecurities.com/wp-content/uploads/sites/2/2025/06/PCE-Diffusion-Indicator.png)
+
+Source: Haver, Citadel Securities
+
+IN THE US , non-farm payrolls came in at 151k with the u/e rate rising to 4.1% – a perfectly normal report. In my mind, this still does not signal enough weakness in the labour market for the Fed to accelerate rate cuts…and although the back-and-forth on tariffs is harmful for sentiment, the hard data continues to suggest that an on-hold stance from the FOMC is appropriate …as highlighted by Chair Powell on Friday: “ Sentiment readings have not been a good predictor of consumption growth in recent years” . The diffusion in PCE consumption components tends to be a good indicator on growth and it continues to show strength through the recent data (chart above; h/t Grant Wilder). Moreover, much of the miss in the S&P Composite PMI was revised away in the final reading and this week’s ISM services came in at 53.5…hardly recessionary. Nevertheless, policy uncertainty is driving the nervousness in markets with both equities and bonds continuing to trade with a risk-off bias. The front-end of the rates market continues to widen the distribution of outcomes with greater probabilities assigned to a deeper cutting cycle (see below)… however, at these valuations it looks attractive to fade these recessionary concerns that are baked into markets. The hard data is fine – the Fed is in no rush. In equities, we have seen a ~6% drawdown…something that is not unusual in the last two years. Hedge fund de-grossing and momentum unwinds are part of the story here, but interestingly options markets are not yet signalling a panic – skew (as measured by 25d calls vs puts) is only marginally above average in SPX…but still nowhere close to the levels seen in the growth scare last summer (chart below; h/t: Ivo Stefanov). Once these technical factors have run their course, rates will be more vulnerable to a sell-off.
+
+![Image 2](https://www.citadelsecurities.com/wp-content/uploads/sites/2/2025/06/USD-Z5.png)
+
+Source: Bloomberg, Citadel Securities
+
+![Image 3](https://www.citadelsecurities.com/wp-content/uploads/sites/2/2025/06/SPX-skew.png)
+
+Source: Bloomberg, Citadel Securities
+
+WHAT STRIKES ME AS MOST INTERESTING about the current landscape is how fiscal policy is shaping up globally. In Europe, the story is now very clear – a dramatic shift amongst EU countries to loosening. In the US, there’s been much talk about restraint, but I continue to believe that the Trump administration has a chronology in mind…get their tariff agenda implemented (along with other issues like immigration control), whilst keeping a lid on 10y yields (the “Trump put”) and not allowing FCI to tighten too much. Then, move onto the growth agenda…deregulation, lower energy prices and most importantly, tax cuts. Tax reform was the standout policy from President Trump’s first term and my view is that he won’t lose sight of that fact in the coming months as he seeks to pass TCJA++ later this year. Even in China, the government announced a total of CNY11.8tn in new borrowing (compared to CNY8.9tn last year) with a target for growth of 5% and a plan to boost consumption. Part of this is battling persistently low consumption…and the rest is driven by the likely impact of the 20% tariffs being implemented by the US. Either way, the message is plain – they plan to spend their way to growth. So, when observing the major global economies, the emerging narrative is one of fiscal loosening – indeed, pandemic levels of fiscal stimulus…but without the output gap. And with inflation in most jurisdictions remaining sticky at above-target levels (along with rising inflation expectations and the risk of tariffs), the capacity for central banks to loosen monetary policy becomes highly constrained. Indeed, one could easily argue that 2y2y swap rates (US: 3.70%, EUR: 2.60%) need to be substantially higher. In the post GFC period 2009-19, monetary policy was the only game in town…but since then, fiscal policy has been the dominant policy lever (including driving the surge in global inflation). It continues to be in the driving seat…and the market would do well to remember that.
