@@ -162,16 +162,37 @@ export default function ReportReader({ params, navigate, onToast }) {
   return (
     <div className="p-6">
       {/* Back nav */}
-      <div className="max-w-860 mb-4" style={{ maxWidth: '860px', margin: '0 auto 1rem' }}>
-        <button
-          onClick={() => navigate('project', { repoName })}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          Back to {formatProjectName(repoName)}
-        </button>
+      <div style={{ maxWidth: '860px', margin: '0 auto 1rem' }}>
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => navigate('project', { repoName })}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to {formatProjectName(repoName)}
+          </button>
+          {report && (
+            <button
+              onClick={() => {
+                const blob = new Blob([report], { type: 'text/markdown' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `${repoName}.md`
+                a.click()
+                URL.revokeObjectURL(url)
+              }}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download .md
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ maxWidth: '860px', margin: '0 auto' }}>
