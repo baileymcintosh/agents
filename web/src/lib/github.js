@@ -47,10 +47,48 @@ export function dispatchWorkflow(workflowFile, inputs = {}) {
   })
 }
 
-export function listRuns(limit = 30) {
+export function listRunsByWorkflow(workflowFile, limit = 10) {
+  return api(`/repos/${OWNER}/${REPO}/actions/workflows/${workflowFile}/runs?per_page=${limit}`)
+}
+
+// List all repos for the owner, return full list
+export async function listRepos() {
+  return api(`/users/${OWNER}/repos?per_page=100&sort=updated&type=public`)
+}
+
+// Read a file from a project repo. Returns decoded text or null.
+export async function readRepoFile(repoName, filePath) {
+  try {
+    const data = await api(`/repos/${OWNER}/${repoName}/contents/${filePath}`)
+    if (data && data.content) {
+      return atob(data.content.replace(/\n/g, ''))
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+// List workflow runs for the agents repo
+export async function listRuns(limit = 40) {
   return api(`/repos/${OWNER}/${REPO}/actions/runs?per_page=${limit}&exclude_pull_requests=true`)
 }
 
-export function listRunsByWorkflow(workflowFile, limit = 10) {
-  return api(`/repos/${OWNER}/${REPO}/actions/workflows/${workflowFile}/runs?per_page=${limit}`)
+// Get a single workflow run
+export async function getRun(runId) {
+  return api(`/repos/${OWNER}/${REPO}/actions/runs/${runId}`)
+}
+
+// Simple in-memory cache
+const _cache = new Map()
+export async function cached(key, ttlMs, fn) {
+  const hit = _cache.get(key)
+  if (hit && Date.now() - hit.ts < ttlMs) return hit.data
+  const data = await fn()
+  _cache.set(key, { data, ts: Date.now() })
+  return data
+}
+
+export function clearCache() {
+  _cache.clear()
 }
