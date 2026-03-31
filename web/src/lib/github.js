@@ -20,36 +20,74 @@ export function clearToken() {
 }
 
 /**
- * Exchange a GitHub OAuth code for an access token via the Netlify function.
- * The function keeps the client_secret server-side.
+ * GitHub Device Flow — works entirely in the browser, no backend needed.
+ * The client_id is public (this is by design for device flow apps).
+ *
+ * Usage:
+ *   1. Call startDeviceFlow() → get { device_code, user_code, verification_uri, interval }
+ *   2. Show user_code + link to verification_uri
+ *   3. Call pollDeviceFlow(device_code, interval) → resolves with access_token
  */
-export async function exchangeOAuthCode(code) {
-  const res = await fetch('/.netlify/functions/github-oauth', {
+
+const DEVICE_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID
+
+export async function startDeviceFlow() {
+  const res = await fetch('https://github.com/login/device/code', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({
+      client_id: DEVICE_CLIENT_ID,
+      scope: 'repo workflow',
+    }),
   })
   const data = await res.json()
-  if (!res.ok || data.error) throw new Error(data.error || 'OAuth exchange failed')
-  return data.access_token
+  if (data.error) throw new Error(data.error_description || data.error)
+  return data // { device_code, user_code, verification_uri, expires_in, interval }
 }
 
-/**
- * Redirect to GitHub OAuth authorization page.
- * scope=repo gives read access; workflow adds dispatch access.
- */
-export function redirectToGitHubOAuth() {
-  const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID
-  if (!clientId) {
-    alert('VITE_GITHUB_CLIENT_ID is not set. Check Netlify env vars and rebuild.')
-    return
-  }
-  const params = new URLSearchParams({
-    client_id: clientId,
-    scope: 'repo workflow',
-    redirect_uri: window.location.origin + '/',
+export async function pollDeviceFlow(deviceCode, intervalSecs = 5) {
+  return new Promise((resolve, reject) => {
+    const ms = (intervalSecs + 1) * 1000 // add 1s buffer to avoid slow_down errors
+
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch('https://github.com/login/oauth/access_token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({
+            client_id: DEVICE_CLIENT_ID,
+            device_code: deviceCode,
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+          }),
+        })
+        const data = await res.json()
+
+        if (data.access_token) {
+          clearInterval(timer)
+          resolve(data.access_token)
+        } else if (data.error === 'authorization_pending') {
+          // still waiting — keep polling
+        } else if (data.error === 'slow_down') {
+          // GitHub wants us to back off — handled by the +1s buffer above
+        } else if (data.error === 'expired_token') {
+          clearInterval(timer)
+          reject(new Error('Code expired. Please try again.'))
+        } else if (data.error === 'access_denied') {
+          clearInterval(timer)
+          reject(new Error('Access denied.'))
+        }
+      } catch (err) {
+        clearInterval(timer)
+        reject(err)
+      }
+    }, ms)
   })
-  window.location.href = `https://github.com/login/oauth/authorize?${params}`
 }
 
 // ---------------------------------------------------------------------------
@@ -91,12 +129,10 @@ export function listRunsByWorkflow(workflowFile, limit = 10) {
   return api(`/repos/${OWNER}/${REPO}/actions/workflows/${workflowFile}/runs?per_page=${limit}`)
 }
 
-// List all repos for the owner
 export async function listRepos() {
   return api(`/users/${OWNER}/repos?per_page=100&sort=updated&type=public`)
 }
 
-// Read a file from a project repo. Returns decoded text or null.
 export async function readRepoFile(repoName, filePath) {
   try {
     const data = await api(`/repos/${OWNER}/${repoName}/contents/${filePath}`)
@@ -109,12 +145,10 @@ export async function readRepoFile(repoName, filePath) {
   }
 }
 
-// List workflow runs for the agents repo
 export async function listRuns(limit = 40) {
   return api(`/repos/${OWNER}/${REPO}/actions/runs?per_page=${limit}&exclude_pull_requests=true`)
 }
 
-// Get a single workflow run
 export async function getRun(runId) {
   return api(`/repos/${OWNER}/${REPO}/actions/runs/${runId}`)
 }

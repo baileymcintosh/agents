@@ -1,8 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import {
-  getToken, setToken, validateToken, clearToken,
-  clearCache, listRuns, exchangeOAuthCode,
-} from './lib/github.js'
+import { getToken, validateToken, clearToken, clearCache, listRuns } from './lib/github.js'
 import Login from './components/Login.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import ProjectLibrary from './components/ProjectLibrary.jsx'
@@ -55,55 +52,20 @@ function SettingsScreen({ user, onLogout }) {
 }
 
 export default function App() {
-  // 'loading' | 'oauth-callback' | 'login' | 'app'
-  const [appState, setAppState] = useState('loading')
+  const [appState, setAppState] = useState('loading') // 'loading' | 'login' | 'app'
   const [user, setUser] = useState(null)
   const [nav, setNav] = useState({ screen: 'library', params: {} })
   const [toast, setToast] = useState(null)
   const [activeRunCount, setActiveRunCount] = useState(0)
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const code = params.get('code')
-
-    // GitHub redirected back with an OAuth code — exchange it
-    if (code) {
-      // Clean the URL immediately so a refresh doesn't re-use the code
-      window.history.replaceState({}, document.title, '/')
-      setAppState('oauth-callback')
-      exchangeOAuthCode(code)
-        .then(token => {
-          setToken(token)
-          return validateToken()
-        })
-        .then(u => {
-          setUser(u)
-          setAppState('app')
-        })
-        .catch(() => {
-          setAppState('login')
-        })
-      return
-    }
-
-    // Normal load — check for stored token
     const token = getToken()
-    if (!token) {
-      setAppState('login')
-      return
-    }
+    if (!token) { setAppState('login'); return }
     validateToken()
-      .then(u => {
-        setUser(u)
-        setAppState('app')
-      })
-      .catch(() => {
-        clearToken()
-        setAppState('login')
-      })
+      .then(u => { setUser(u); setAppState('app') })
+      .catch(() => { clearToken(); setAppState('login') })
   }, [])
 
-  // Poll active run count for sidebar badge
   const pollActiveRuns = useCallback(async () => {
     try {
       const data = await listRuns(40)
@@ -126,6 +88,11 @@ export default function App() {
     window.scrollTo(0, 0)
   }
 
+  function handleLogin(u) {
+    setUser(u)
+    setAppState('app')
+  }
+
   function handleLogout() {
     clearToken()
     clearCache()
@@ -138,21 +105,19 @@ export default function App() {
     setTimeout(() => setToast(null), 5000)
   }
 
-  if (appState === 'loading' || appState === 'oauth-callback') {
+  if (appState === 'loading') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex items-center gap-3 text-gray-500">
           <Spinner />
-          <span className="text-sm">
-            {appState === 'oauth-callback' ? 'Signing in...' : 'Loading...'}
-          </span>
+          <span className="text-sm">Loading...</span>
         </div>
       </div>
     )
   }
 
   if (appState === 'login') {
-    return <Login />
+    return <Login onLogin={handleLogin} />
   }
 
   return (
@@ -164,7 +129,6 @@ export default function App() {
         onLogout={handleLogout}
         activeRunCount={activeRunCount}
       />
-
       <div className="lg:pl-60 pt-14 lg:pt-0">
         <main className="min-h-screen bg-gray-50">
           {nav.screen === 'library' && <ProjectLibrary navigate={navigate} />}
@@ -175,7 +139,6 @@ export default function App() {
           {nav.screen === 'settings' && <SettingsScreen user={user} onLogout={handleLogout} />}
         </main>
       </div>
-
       {toast && (
         <div className={`fixed top-4 right-4 z-50 max-w-sm px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${
           toast.type === 'error'
