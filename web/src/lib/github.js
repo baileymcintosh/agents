@@ -3,6 +3,10 @@ const REPO = 'agents'
 const BASE = 'https://api.github.com'
 const TOKEN_KEY = 'gh_pat'
 
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
 export function setToken(token) {
   localStorage.setItem(TOKEN_KEY, token)
 }
@@ -14,6 +18,43 @@ export function getToken() {
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY)
 }
+
+/**
+ * Exchange a GitHub OAuth code for an access token via the Netlify function.
+ * The function keeps the client_secret server-side.
+ */
+export async function exchangeOAuthCode(code) {
+  const res = await fetch('/.netlify/functions/github-oauth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  const data = await res.json()
+  if (!res.ok || data.error) throw new Error(data.error || 'OAuth exchange failed')
+  return data.access_token
+}
+
+/**
+ * Redirect to GitHub OAuth authorization page.
+ * scope=repo gives read access; workflow adds dispatch access.
+ */
+export function redirectToGitHubOAuth() {
+  const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID
+  if (!clientId) {
+    alert('VITE_GITHUB_CLIENT_ID is not set. Check Netlify env vars and rebuild.')
+    return
+  }
+  const params = new URLSearchParams({
+    client_id: clientId,
+    scope: 'repo workflow',
+    redirect_uri: window.location.origin + '/',
+  })
+  window.location.href = `https://github.com/login/oauth/authorize?${params}`
+}
+
+// ---------------------------------------------------------------------------
+// API
+// ---------------------------------------------------------------------------
 
 export async function api(path, options = {}) {
   const token = getToken()
@@ -30,7 +71,6 @@ export async function api(path, options = {}) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.message || `GitHub API error ${res.status}`)
   }
-  // 204 No Content
   if (res.status === 204) return null
   return res.json()
 }
@@ -51,7 +91,7 @@ export function listRunsByWorkflow(workflowFile, limit = 10) {
   return api(`/repos/${OWNER}/${REPO}/actions/workflows/${workflowFile}/runs?per_page=${limit}`)
 }
 
-// List all repos for the owner, return full list
+// List all repos for the owner
 export async function listRepos() {
   return api(`/users/${OWNER}/repos?per_page=100&sort=updated&type=public`)
 }
@@ -79,8 +119,12 @@ export async function getRun(runId) {
   return api(`/repos/${OWNER}/${REPO}/actions/runs/${runId}`)
 }
 
-// Simple in-memory cache
+// ---------------------------------------------------------------------------
+// Cache
+// ---------------------------------------------------------------------------
+
 const _cache = new Map()
+
 export async function cached(key, ttlMs, fn) {
   const hit = _cache.get(key)
   if (hit && Date.now() - hit.ts < ttlMs) return hit.data

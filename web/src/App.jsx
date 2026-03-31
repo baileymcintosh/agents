@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getToken, validateToken, clearToken, clearCache, listRuns } from './lib/github.js'
+import {
+  getToken, setToken, validateToken, clearToken,
+  clearCache, listRuns, exchangeOAuthCode,
+} from './lib/github.js'
 import Login from './components/Login.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import ProjectLibrary from './components/ProjectLibrary.jsx'
@@ -18,15 +21,9 @@ function Spinner() {
 }
 
 function SettingsScreen({ user, onLogout }) {
-  function handleClearCache() {
-    clearCache()
-    window.location.reload()
-  }
-
   return (
     <div className="p-6 max-w-lg">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
-
       <div className="bg-white shadow-sm rounded-xl p-5 space-y-5">
         <div className="flex items-center gap-3">
           {user?.avatar_url && (
@@ -37,28 +34,10 @@ function SettingsScreen({ user, onLogout }) {
             <p className="text-xs text-gray-500">@{user?.login}</p>
           </div>
         </div>
-
         <hr className="border-gray-100" />
-
-        <div>
-          <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Token scopes required</h2>
-          <ul className="text-sm text-gray-600 space-y-1">
-            <li className="flex gap-2">
-              <span className="text-green-500">✓</span>
-              Classic PAT: <code className="font-mono text-xs bg-gray-100 px-1 rounded">workflow</code>
-            </li>
-            <li className="flex gap-2">
-              <span className="text-green-500">✓</span>
-              Fine-grained: Actions — Read &amp; Write
-            </li>
-          </ul>
-        </div>
-
-        <hr className="border-gray-100" />
-
         <div className="flex flex-col gap-3">
           <button
-            onClick={handleClearCache}
+            onClick={() => { clearCache(); window.location.reload() }}
             className="w-full text-left px-4 py-2.5 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
           >
             Clear cache &amp; reload
@@ -76,21 +55,45 @@ function SettingsScreen({ user, onLogout }) {
 }
 
 export default function App() {
-  const [appState, setAppState] = useState('loading') // 'loading' | 'login' | 'app'
+  // 'loading' | 'oauth-callback' | 'login' | 'app'
+  const [appState, setAppState] = useState('loading')
   const [user, setUser] = useState(null)
   const [nav, setNav] = useState({ screen: 'library', params: {} })
   const [toast, setToast] = useState(null)
   const [activeRunCount, setActiveRunCount] = useState(0)
 
-  // Validate token on mount
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+
+    // GitHub redirected back with an OAuth code — exchange it
+    if (code) {
+      // Clean the URL immediately so a refresh doesn't re-use the code
+      window.history.replaceState({}, document.title, '/')
+      setAppState('oauth-callback')
+      exchangeOAuthCode(code)
+        .then(token => {
+          setToken(token)
+          return validateToken()
+        })
+        .then(u => {
+          setUser(u)
+          setAppState('app')
+        })
+        .catch(() => {
+          setAppState('login')
+        })
+      return
+    }
+
+    // Normal load — check for stored token
     const token = getToken()
     if (!token) {
       setAppState('login')
       return
     }
     validateToken()
-      .then((u) => {
+      .then(u => {
         setUser(u)
         setAppState('app')
       })
@@ -100,7 +103,7 @@ export default function App() {
       })
   }, [])
 
-  // Poll for active run count
+  // Poll active run count for sidebar badge
   const pollActiveRuns = useCallback(async () => {
     try {
       const data = await listRuns(40)
@@ -108,9 +111,7 @@ export default function App() {
         r => r.status === 'in_progress' || r.status === 'queued'
       )
       setActiveRunCount(active.length)
-    } catch {
-      // best effort
-    }
+    } catch { /* best effort */ }
   }, [])
 
   useEffect(() => {
@@ -122,13 +123,7 @@ export default function App() {
 
   function navigate(screen, params = {}) {
     setNav({ screen, params })
-    // Scroll to top
     window.scrollTo(0, 0)
-  }
-
-  function handleLogin(u) {
-    setUser(u)
-    setAppState('app')
   }
 
   function handleLogout() {
@@ -143,27 +138,25 @@ export default function App() {
     setTimeout(() => setToast(null), 5000)
   }
 
-  // Loading screen
-  if (appState === 'loading') {
+  if (appState === 'loading' || appState === 'oauth-callback') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex items-center gap-3 text-gray-500">
           <Spinner />
-          <span className="text-sm">Verifying token...</span>
+          <span className="text-sm">
+            {appState === 'oauth-callback' ? 'Signing in...' : 'Loading...'}
+          </span>
         </div>
       </div>
     )
   }
 
-  // Login screen
   if (appState === 'login') {
-    return <Login onLogin={handleLogin} />
+    return <Login />
   }
 
-  // Main app
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Sidebar */}
       <Sidebar
         user={user}
         screen={nav.screen}
@@ -172,33 +165,19 @@ export default function App() {
         activeRunCount={activeRunCount}
       />
 
-      {/* Main content - offset for sidebar on desktop, padded top on mobile */}
       <div className="lg:pl-60 pt-14 lg:pt-0">
         <main className="min-h-screen bg-gray-50">
-          {nav.screen === 'library' && (
-            <ProjectLibrary navigate={navigate} />
-          )}
-          {nav.screen === 'new' && (
-            <NewProject navigate={navigate} onToast={showToast} />
-          )}
-          {nav.screen === 'project' && (
-            <ProjectDetail params={nav.params} navigate={navigate} onToast={showToast} />
-          )}
-          {nav.screen === 'report' && (
-            <ReportReader params={nav.params} navigate={navigate} onToast={showToast} />
-          )}
-          {nav.screen === 'active-runs' && (
-            <ActiveRuns />
-          )}
-          {nav.screen === 'settings' && (
-            <SettingsScreen user={user} onLogout={handleLogout} />
-          )}
+          {nav.screen === 'library' && <ProjectLibrary navigate={navigate} />}
+          {nav.screen === 'new' && <NewProject navigate={navigate} onToast={showToast} />}
+          {nav.screen === 'project' && <ProjectDetail params={nav.params} navigate={navigate} onToast={showToast} />}
+          {nav.screen === 'report' && <ReportReader params={nav.params} navigate={navigate} onToast={showToast} />}
+          {nav.screen === 'active-runs' && <ActiveRuns />}
+          {nav.screen === 'settings' && <SettingsScreen user={user} onLogout={handleLogout} />}
         </main>
       </div>
 
-      {/* Toast notifications */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 max-w-sm px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all ${
+        <div className={`fixed top-4 right-4 z-50 max-w-sm px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${
           toast.type === 'error'
             ? 'bg-red-50 border border-red-200 text-red-700'
             : 'bg-green-50 border border-green-200 text-green-700'
